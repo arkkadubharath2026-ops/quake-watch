@@ -106,7 +106,7 @@ CanonicalEventInput(
     tsunami=...,
     significance=...,
     network=...,
-    detail_url=...
+    detail_url=...,
 )
 ```
 

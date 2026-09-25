@@ -47,7 +47,7 @@ When invoked:
       print(order.user.email)  # N+1
 
   # Good
-  for order in Order.objects.select_related('user').all():
+  for order in Order.objects.select_related("user").all():
       print(order.user.email)
   ```
 - **Missing `atomic()` for multi-step writes**: Use `transaction.atomic()` for any sequence of DB writes
@@ -103,7 +103,7 @@ When invoked:
 
   # Good
   user.last_active = now()
-  user.save(update_fields=['last_active'])
+  user.save(update_fields=["last_active"])
   ```
 
 ### MEDIUM — Best Practices

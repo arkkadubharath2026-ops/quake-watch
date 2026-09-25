@@ -1,0 +1,13 @@
+.venv
+.git
+.env
+var
+staticfiles
+graphify-out
+.claude
+**/__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+test-results
+playwright-report
