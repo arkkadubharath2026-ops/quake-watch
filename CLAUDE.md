@@ -20,12 +20,15 @@ resolution as an ADR in `docs/adr/`.
    (real ArangoDB, real HTTP where appropriate).
 5. **Every dependency must solve a concrete problem**; record it in `docs/DEPENDENCIES.md`.
 6. **Keep README.md and docs/ (ARCHITECTURE.md, AQL_QUERIES.md, ADRs) current** as the implementation evolves.
-7. **End every work report with a status bar** showing per-layer progress, e.g.
-   `L1 Foundations ██████████ 100%`.
+7. **End every work report with a status bar** showing per-layer progress — superseded by #10.
 8. Store new important standing instructions from the owner in this file.
 9. **Compact after every major task.** Claude cannot run `/compact` itself, so after each completed,
    committed milestone end with a self-contained hand-off summary (done / repo state / next step)
    plus the reminder "Run /compact now", and keep intermediate narration lean.
+10. **End every completed work session with a Project Dashboard**: overall %, a progress bar per
+    milestone L0–L6, completed vs remaining tasks, branch + commit, tests/coverage, next recommended
+    milestone, and a /compact reminder. Never estimate percentages — tick tasks in `docs/PROGRESS.md`
+    only when done and committed, then paste the output of `.venv/Scripts/python scripts/dashboard.py`.
 
 ## Architecture (see docs/ARCHITECTURE.md)
 

@@ -204,7 +204,8 @@ SIGNIFICANT_BY_WEEK = _q(
     FOR e IN events
       FILTER e.occurred_at >= @since FILTER e.merged_into == null
       FILTER e.significance >= 600 OR e.alert != null OR e.tsunami
-      COLLECT week = DATE_FORMAT(e.occurred_at, "%xxxx-W%kk") INTO members = e
+      LET iso = DATE_ISOWEEKYEAR(e.occurred_at)
+      COLLECT week = CONCAT(iso.year, "-W", RIGHT(CONCAT("0", iso.week), 2)) INTO members = e
       SORT week
       RETURN {week: week, count: LENGTH(members),
               strongest: MAX(members[*].magnitude)}

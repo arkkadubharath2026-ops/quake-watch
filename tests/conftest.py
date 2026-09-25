@@ -62,3 +62,24 @@ def clean_metrics() -> Iterator[None]:
 
 def load_fixture(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Record the outcome of full runs in var/test-status.json for scripts/dashboard.py."""
+    import json
+    from datetime import UTC, datetime
+
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is None or session.config.option.collectonly:
+        return
+    outcomes = ("passed", "failed", "error", "skipped")
+    counts = {key: len(reporter.stats.get(key, [])) for key in outcomes}
+    status = {
+        "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "exit_status": int(exitstatus),
+        "args": session.config.invocation_params.args,
+        **counts,
+    }
+    target = Path(session.config.rootpath) / "var" / "test-status.json"
+    target.parent.mkdir(exist_ok=True)
+    target.write_text(json.dumps(status, indent=2) + "\n")

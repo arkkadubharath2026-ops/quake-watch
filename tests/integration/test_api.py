@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -305,6 +306,20 @@ class TestAnalytics:
         total = api_db.collection(s.EVENTS).count()
         assert sum(r["count"] for r in data["networks"]) == total
         assert data["regions"][0]["count"] >= data["regions"][-1]["count"]
+
+    def test_significant_by_week_uses_iso_week_year(
+        self, client: Client, api_db: StandardDatabase
+    ) -> None:
+        data = body(client.get(f"{API}/analytics/timeseries", {"days": "3650"}))
+        expected: dict[str, int] = {}
+        for e in api_db.collection(s.EVENTS).all():
+            significant = (e.get("significance") or 0) >= 600 or e.get("alert") or e.get("tsunami")
+            if e.get("merged_into") is None and significant:
+                iso = datetime.fromisoformat(e["occurred_at"]).isocalendar()
+                label = f"{iso.year}-W{iso.week:02d}"
+                expected[label] = expected.get(label, 0) + 1
+        assert expected, "fixture must contain significant events"
+        assert {w["week"]: w["count"] for w in data["significant_by_week"]} == expected
 
     @pytest.mark.parametrize("days", ["0", "abc", "99999"])
     def test_invalid_window(self, client: Client, api_db: StandardDatabase, days: str) -> None:
