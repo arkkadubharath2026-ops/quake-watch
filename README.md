@@ -55,14 +55,18 @@ docker compose up -d --build              # web on http://127.0.0.1:8000, health
 | `manage.py backfill --start … --end … [--min-magnitude] [--window-days] [--enqueue] [--resume ID]` | bounded, checkpointed catalog import |
 | `manage.py enrich_event <event_key>` | fetch detail-feed product summaries for one event |
 | `manage.py aql_catalog [--write]` | EXPLAIN every named AQL query; regenerate docs/AQL_QUERIES.md |
+| `manage.py arango_benchmark [--sizes 500,10000,100000] [--write]` | index before/after benchmark on a disposable `*_bench_test` database; regenerate docs/BENCHMARKS.md |
 
 ### Tests
 ```bash
 .venv/Scripts/python -m pytest                 # unit, contract, resilience, integration, architecture
+.venv/Scripts/python -m playwright install chromium   # once, for the browser suite
+.venv/Scripts/python -m pytest tests/e2e -m e2e      # browser flows + WCAG 2.2 AA audit (axe-core)
 .venv/Scripts/python -m pytest -m live         # opt-in: real USGS API contract checks
 ```
-Integration tests use a real ArangoDB (`<db>_test`, created and dropped per run) — nothing in that
-suite mocks the database.
+Integration and browser tests use a real ArangoDB (`<db>_test`, created and dropped per run) —
+nothing in those suites mocks the database. CI (`.github/workflows/ci.yml`) runs lint → unit →
+integration (coverage ≥ 90 %) → browser/a11y → dependency audit + deploy checks → container build.
 
 ## Implementation Status
 
@@ -74,10 +78,10 @@ suite mocks the database.
 | L3 Query & API | event search/map/detail/revisions/provenance/graph, analytics, freshness, ops API, 47 catalogued AQL queries | done |
 | L4 User features | explainable alert rules + in-transaction matching, saved searches, reproducible research snapshots, admin actions, audit trail, login throttling | done |
 | L5 UI | design system (light/dark), dashboard, live map, explorer, event detail, analytics, alerts, research lab, status, operations, about, accounts | done |
-| L6 Hardening | index benchmarks, Playwright E2E, accessibility audit, CI | next |
+| L6 Hardening | index benchmarks (500/10k/100k) with a fixed list-query regression, Playwright E2E, WCAG 2.2 AA audit and fixes, GitHub Actions CI, runbook | done |
 
-Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · UI: [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) · Progress: [docs/PROGRESS.md](docs/PROGRESS.md) · AQL: [docs/AQL_QUERIES.md](docs/AQL_QUERIES.md) · Decisions: [docs/adr/](docs/adr/) ·
-Dependencies: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md)
+Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · UI: [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) · Progress: [docs/PROGRESS.md](docs/PROGRESS.md) · AQL: [docs/AQL_QUERIES.md](docs/AQL_QUERIES.md) · Benchmarks: [docs/BENCHMARKS.md](docs/BENCHMARKS.md) ·
+Accessibility: [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) · Operations: [docs/RUNBOOK.md](docs/RUNBOOK.md) · Rubric: [docs/RUBRIC.md](docs/RUBRIC.md) · Decisions: [docs/adr/](docs/adr/) · Dependencies: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md)
 
 ## Primary Data Source
 
@@ -491,13 +495,22 @@ Suggested acknowledgment:
 - `docs/PRD.md` — product scope, users, differentiation, requirements, research potential.
 - `docs/ESD.md` — architecture, data model, ingestion, reliability, security, testing, deployment.
 - `docs/ARCHITECTURE.md` — as-built architecture, data model, rubric mapping, ingestion flow.
-- `docs/adr/` — architecture decision records.
+- `docs/adr/` — architecture decision records (ADR-001 … ADR-012).
 - `docs/DEPENDENCIES.md` — why each dependency exists.
+- `docs/AQL_QUERIES.md` — the 47 named AQL queries with live EXPLAIN plans (generated).
+- `docs/BENCHMARKS.md` — index before/after benchmark at 500 / 10k / 100k records (generated).
+- `docs/DESIGN_SYSTEM.md` and `docs/ACCESSIBILITY.md` — UI tokens, components, states; WCAG 2.2 AA audit.
+- `docs/SECURITY_REVIEW.md` — security reviews per milestone and their fixes.
+- `docs/RUNBOOK.md` — operating, troubleshooting, backup/restore, release checklist.
+- `docs/RUBRIC.md` — academic rubric mapped to implementation and evidence.
+- `docs/PROGRESS.md` — milestone checklist (`python scripts/dashboard.py` renders the dashboard).
 
 ## Current Recommended Milestone
 
-Build this first:
+All planned milestones (L0–L6) are complete — see [docs/PROGRESS.md](docs/PROGRESS.md). The original
+recommendation was followed: the build started with
 
 > Historical backfill + live USGS synchronization + idempotent ArangoDB storage + revision tracking + system-health dashboard.
 
-Once that foundation is correct, the map, analytics, alerts, and research layer become much easier to build reliably.
+(L1–L2), and the map, analytics, alerts and research layers were built on that foundation. The
+natural next step is a research extension (ESD §20), e.g. EMSC multi-source concordance.

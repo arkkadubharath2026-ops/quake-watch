@@ -1,0 +1,185 @@
+# QuakeWatch CI (ESD §17): lint → unit → integration → dependency/security → container build.
+# Critical failures block merge: every job below is required, and later stages need earlier ones.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  # Test-only settings; the test settings module forces QW_ENV=test and the *_test database.
+  QW_SECRET_KEY: ci-only-secret-key-not-used-anywhere-else-0123456789abcdef
+  QW_ARANGO_PASSWORD: ci-arango-password
+  QW_ARANGO_URL: http://127.0.0.1:8529
+  QW_REDIS_URL: redis://127.0.0.1:6379/0
+  QW_ALLOWED_HOSTS: localhost,127.0.0.1
+  QW_LOG_JSON: "false"
+
+jobs:
+  lint:
+    name: Lint, format, types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy apps config
+
+  unit:
+    name: Unit, contract, resilience, architecture
+    needs: lint
+    runs-on: ubuntu-latest
+    services:  # ArangoDB for the repository-backed unit tests; Redis for breaker/throttle state
+      arangodb:
+        image: arangodb:3.12.5
+        env:
+          ARANGO_ROOT_PASSWORD: ci-arango-password
+        ports: ["8529:8529"]
+        options: >-
+          --health-cmd "wget -q -O /dev/null http://127.0.0.1:8529/_admin/server/availability"
+          --health-interval 5s --health-timeout 3s --health-retries 40
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest tests/unit tests/contract tests/resilience tests/architecture -q
+
+  integration:
+    name: Integration (real ArangoDB) + coverage
+    needs: unit
+    runs-on: ubuntu-latest
+    services:
+      arangodb:
+        image: arangodb:3.12.5
+        env:
+          ARANGO_ROOT_PASSWORD: ci-arango-password
+        ports: ["8529:8529"]
+        options: >-
+          --health-cmd "wget -q -O /dev/null http://127.0.0.1:8529/_admin/server/availability"
+          --health-interval 5s --health-timeout 3s --health-retries 40
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      # Default markers exclude live-USGS, e2e and perf tests (pyproject addopts).
+      - run: >-
+          python -m pytest --cov=apps --cov-report=term-missing:skip-covered
+          --cov-report=xml --cov-fail-under=90
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  e2e:
+    name: Browser end-to-end + WCAG 2.2 AA audit
+    needs: integration
+    runs-on: ubuntu-latest
+    services:
+      arangodb:
+        image: arangodb:3.12.5
+        env:
+          ARANGO_ROOT_PASSWORD: ci-arango-password
+        ports: ["8529:8529"]
+        options: >-
+          --health-cmd "wget -q -O /dev/null http://127.0.0.1:8529/_admin/server/availability"
+          --health-interval 5s --health-timeout 3s --health-retries 40
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest tests/e2e -m e2e --tracing retain-on-failure --output test-results
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results
+
+  security:
+    name: Dependency audit + deploy checks
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Known-vulnerability scan (runtime and dev dependencies)
+        run: pip-audit -r requirements.txt -r requirements-dev.txt
+      - name: Django deploy checks with production settings
+        env:
+          QW_ENV: production
+          QW_DEBUG: "false"
+          QW_ALLOWED_HOSTS: quakewatch.example.org
+          QW_CSRF_TRUSTED_ORIGINS: https://quakewatch.example.org
+        run: python manage.py check --deploy --fail-level WARNING
+
+  build:
+    name: Container image
+    needs: [integration, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: APP_VERSION=${{ github.sha }}
+          tags: quakewatch-app:ci
+          load: true
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Image runs as non-root and imports the app
+        run: |
+          test "$(docker run --rm --entrypoint id quakewatch-app:ci -u)" = "10001"
+          docker run --rm --entrypoint python \
+            -e QW_SECRET_KEY=ci-only-secret-key-not-used-anywhere-else-0123456789abcdef \
+            -e QW_ARANGO_PASSWORD=unused \
+            quakewatch-app:ci manage.py check

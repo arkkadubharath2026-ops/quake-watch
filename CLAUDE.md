@@ -64,6 +64,8 @@ docker compose up -d arangodb redis                 # infra for dev/tests
 .venv/Scripts/python manage.py arango_migrate       # idempotent collections/indexes/views/graph
 .venv/Scripts/python manage.py runserver
 .venv/Scripts/python -m pytest -m "not e2e and not perf"
+.venv/Scripts/python -m pytest tests/e2e -m e2e          # Playwright flows + WCAG 2.2 AA (axe)
+.venv/Scripts/python manage.py arango_benchmark --write  # index benchmark -> docs/BENCHMARKS.md
 .venv/Scripts/python -m ruff check . && .venv/Scripts/python -m ruff format --check .
 .venv/Scripts/python -m mypy apps config
 ```

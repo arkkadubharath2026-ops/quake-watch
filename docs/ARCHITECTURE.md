@@ -51,7 +51,7 @@ Declared in `apps/core/arango/schema.py` (schema version 2; versioned data migra
 
 | Collection | Kind | Key | Purpose | Indexes (`qw_*`) |
 |---|---|---|---|---|
-| `events` | doc | `usgs_<first-seen id>` | canonical current event | unique(source, source_event_id, merged_into), geo(coordinates, GeoJSON), occurred_at, magnitude |
+| `events` | doc | `usgs_<first-seen id>` | canonical current event | unique(source, source_event_id, merged_into), geo(coordinates, GeoJSON), (occurred_at, _key) storing merged_into+magnitude, (magnitude, _key) storing merged_into — ADR-012 |
 | `event_identities` | doc | `usgs_<id>` | identity claims: every associated id → live event (ADR-003) | event_key |
 | `event_revisions` | doc | `<event_key>_<n>` | immutable meaningful changes | unique(event_key, revision_number), observed_at |
 | `raw_payloads` | doc | sha256 | content-addressed raw source payloads | TTL(expires_at) |
@@ -216,3 +216,37 @@ Event Detail calls `EventQueryService` directly (same service as the API).
 API data with `textContent` only; upstream URLs are rendered as links only when they are
 `https://*.usgs.gov` (`earthquakes.services.safe_usgs_url`); logout is POST-only; the login page
 explains a lockout without revealing whether the account exists.
+
+## 10. Hardening (L6)
+
+**Performance.** `manage.py arango_benchmark` seeds a disposable `*_bench_test` database with a
+synthetic, schema-valid catalogue shaped like the USGS feed (`apps/core/arango/benchmark.py`). It
+then times the production AQL for five workloads with and without the read indexes, at 500, 10k
+and 100k records. The first run exposed a list-query regression at 100k (p95 611 ms). It was fixed
+with covering sort indexes and a count subquery in place of `fullCount` (ADR-012, now p95 37 ms).
+Results and tuning history: [BENCHMARKS.md](BENCHMARKS.md).
+
+**Browser tests.** `tests/e2e` (Playwright + pytest-django live server) drives the real app
+against the real ArangoDB test database, seeded from the recorded feed. It covers:
+- the dashboard, Explorer filters/sort/paging/history, Event Detail tabs, a real 404;
+- alert rule CRUD with validation, research snapshot + manifest + CSV export, saved searches;
+- accounts, staff-only operations;
+- the server, network and throttling states with retry.
+
+Map tiles are the only thing stubbed. Any console error or CSP violation fails a test. The auth test database is file-backed (`config/settings_test.py`): Django's in-memory SQLite test
+database would share one connection across the live server's request threads, and the browser's
+parallel API calls then collided on it (intermittent 500s, found in the combined gate run).
+
+**Accessibility.** The axe-core WCAG 2.2 A/AA rules run on every page in both themes and at
+320 px, alongside keyboard, focus and reduced-motion tests. The findings (contrast, target size,
+focusable scroll regions, stuck `aria-busy`, focus-ring contrast, reduced-motion flicker) were
+fixed in shared CSS/JS (`QW.fill`, `QW.scrollRegion`). See [ACCESSIBILITY.md](ACCESSIBILITY.md).
+
+**CI** (`.github/workflows/ci.yml`, ESD §17): lint + format + strict mypy → unit/contract/
+resilience/architecture → integration with coverage ≥ 90 % → browser + accessibility suite →
+`pip-audit` + `check --deploy` with production settings → container build and a smoke check that
+the image runs as non-root. Services are the same ArangoDB and Redis images as Compose.
+
+**Operations.** [RUNBOOK.md](RUNBOOK.md) covers start/upgrade, health and freshness signals,
+incident playbooks, data tasks, backup/restore and the release checklist. The rubric mapping is
+in [RUBRIC.md](RUBRIC.md).

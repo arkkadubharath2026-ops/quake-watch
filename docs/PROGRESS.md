@@ -57,8 +57,8 @@ the same). Never edit percentages by hand — they are computed.
 - [x] Accounts pages (sign up, log in, log out) and About Data & Methodology
 
 ## L6 Hardening
-- [ ] Index benchmarks before/after at 500, 10k and 100k records
-- [ ] Playwright end-to-end tests for the main flows
-- [ ] Accessibility audit (WCAG 2.2 AA) and fixes
-- [ ] GitHub Actions CI: lint, types, unit, integration, pip-audit, container build
-- [ ] Final documentation pass: README, architecture, runbook, rubric mapping
+- [x] Index benchmarks before/after at 500, 10k and 100k records
+- [x] Playwright end-to-end tests for the main flows
+- [x] Accessibility audit (WCAG 2.2 AA) and fixes
+- [x] GitHub Actions CI: lint, types, unit, integration, pip-audit, container build
+- [x] Final documentation pass: README, architecture, runbook, rubric mapping

@@ -35,3 +35,27 @@ page), no `unsafe-inline`; API data inserted with `textContent` only (no `innerH
 `static/qw/js`); CSRF header on all unsafe fetches; logout POST-only; off-site `next` rejected
 after login (test); protected pages gated server-side (302 to login, 403 for non-staff);
 `json_script` for page data; `rel="noopener noreferrer"` on external links.
+
+## 2026-09-25 — L6 hardening (benchmarks, browser tests, CI)
+
+Self-review during the milestone gate (benchmark tooling, test harness, CI workflow, runbook).
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| H1 | Low (dev only) | `pip-audit` flagged pytest 8.4.2 (PYSEC-2026-1845: predictable `/tmp/pytest-of-{user}` directories allow local DoS or privilege gain on shared UNIX hosts) | Dev requirement raised to `pytest>=9.0.3`; the full suite passes on pytest 9; CI runs `pip-audit` on runtime and dev requirements |
+| H2 | Low (test only) | The browser-test conftest set `DJANGO_ALLOW_ASYNC_UNSAFE` at import time. pytest imports it during every collection, so the async-safety guard was off for the whole test process | Session-scoped fixture limited to `tests/e2e`; the previous value is restored afterwards |
+
+Verified:
+- **Benchmark tool:** it can only create and drop a database whose name ends in `_test`, guarded
+  in both `prepare_database` and `drop_database`, with a test. Application data is never touched,
+  and every value is a bind variable.
+- **CI workflow:** `permissions: contents: read`; no `pull_request_target`; no repository secrets
+  (the service credentials are CI-only values); services bound to the runner only.
+- **Container:** the image runs as uid 10001, checked in CI.
+- **Deploy check:** `check --deploy --fail-level WARNING` is clean with production settings.
+- **Browser tests:** they load no third-party code into the app. Map tiles are answered locally,
+  and axe-core is injected only by the test harness.
+
+Accepted risk: third-party GitHub Actions are pinned to major-version tags (`actions/*@v4/v5`,
+`docker/*@v3/v6`), not commit SHAs. Pin to SHAs if the repository becomes public or receives
+outside pull requests.
