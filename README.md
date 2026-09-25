@@ -24,6 +24,57 @@ A basic earthquake project can fetch an API and put markers on a map. QuakeWatch
 
 This makes the project suitable for a serious NoSQL/database course while also creating a foundation for later research.
 
+## Quick Start
+
+Requirements: Docker (for ArangoDB + Redis), Python 3.12.
+
+```bash
+cp .env.example .env                      # then set QW_SECRET_KEY and the ArangoDB passwords
+docker compose up -d arangodb redis
+python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt   # (bin/ on Linux/macOS)
+.venv/Scripts/python manage.py migrate            # Django auth tables (SQLite, ADR-009)
+.venv/Scripts/python manage.py arango_migrate     # ArangoDB collections, indexes, view, graph
+.venv/Scripts/python manage.py sync_feed          # ingest the live USGS feed now
+.venv/Scripts/python manage.py backfill --start 2026-08-26 --end 2026-09-25 --min-magnitude 2.5
+```
+
+Full stack in containers (web + Celery worker + beat):
+
+```bash
+docker compose up -d --build              # web on http://127.0.0.1:8000, health at /health/ready
+```
+
+### Operator commands
+| Command | Purpose |
+|---|---|
+| `manage.py arango_migrate` | idempotent schema reconciliation + versioned data migrations |
+| `manage.py sync_feed [--feed all_day]` | one feed sync (same code path as the scheduled task) |
+| `manage.py backfill --start … --end … [--min-magnitude] [--window-days] [--enqueue] [--resume ID]` | bounded, checkpointed catalog import |
+| `manage.py enrich_event <event_key>` | fetch detail-feed product summaries for one event |
+
+### Tests
+```bash
+.venv/Scripts/python -m pytest                 # unit, contract, resilience, integration, architecture
+.venv/Scripts/python -m pytest -m live         # opt-in: real USGS API contract checks
+```
+Integration tests use a real ArangoDB (`<db>_test`, created and dropped per run) — nothing in that
+suite mocks the database.
+
+## Implementation Status
+
+| Layer | Scope | State |
+|---|---|---|
+| L0 Harness | repo, Docker, Claude tooling (CLAUDE.md, agents, skills, hooks), Graphify | done |
+| L1 Foundations | typed config, logging, errors, metrics, ArangoDB schema/migrations/transactions, health | done |
+| L2 Ingestion | USGS adapters, normaliser, revision policy, identity claims, pipeline, backfill, enrichment, Celery jobs | done |
+| L3 Query & API | event search/map/detail/revisions, analytics, freshness, 15+ documented AQL queries | next |
+| L4 User features | accounts, alert rules + explainable matches, saved searches, research snapshots, audit log | planned |
+| L5 UI | Bootstrap design system, dashboard, map, explorer, detail, analytics, research, operations | planned |
+| L6 Hardening | benchmarks, E2E, CI, security review | planned |
+
+Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Decisions: [docs/adr/](docs/adr/) ·
+Dependencies: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md)
+
 ## Primary Data Source
 
 ### U.S. Geological Survey (USGS)
@@ -435,6 +486,9 @@ Suggested acknowledgment:
 
 - `docs/PRD.md` — product scope, users, differentiation, requirements, research potential.
 - `docs/ESD.md` — architecture, data model, ingestion, reliability, security, testing, deployment.
+- `docs/ARCHITECTURE.md` — as-built architecture, data model, rubric mapping, ingestion flow.
+- `docs/adr/` — architecture decision records.
+- `docs/DEPENDENCIES.md` — why each dependency exists.
 
 ## Current Recommended Milestone
 

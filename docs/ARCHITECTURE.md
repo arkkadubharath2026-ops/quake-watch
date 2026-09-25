@@ -46,11 +46,13 @@ framework- or I/O-related. Enforced by `tests/architecture/test_boundaries.py`.
 
 ## 3. Data model (ArangoDB)
 
-Declared in `apps/core/arango/schema.py` (schema version 1).
+Declared in `apps/core/arango/schema.py` (schema version 2; versioned data migrations in
+`apps/core/arango/migrate.py`).
 
 | Collection | Kind | Key | Purpose | Indexes (`qw_*`) |
 |---|---|---|---|---|
-| `events` | doc | `usgs_<id>` | canonical current event | unique(source, source_event_id), geo(coordinates, GeoJSON), occurred_at, magnitude |
+| `events` | doc | `usgs_<first-seen id>` | canonical current event | unique(source, source_event_id, merged_into), geo(coordinates, GeoJSON), occurred_at, magnitude |
+| `event_identities` | doc | `usgs_<id>` | identity claims: every associated id → live event (ADR-003) | event_key |
 | `event_revisions` | doc | `<event_key>_<n>` | immutable meaningful changes | unique(event_key, revision_number), observed_at |
 | `raw_payloads` | doc | sha256 | content-addressed raw source payloads | TTL(expires_at) |
 | `regions` | doc | slug | derived geographic entities | — |
@@ -62,7 +64,7 @@ Declared in `apps/core/arango/schema.py` (schema version 1).
 | `research_snapshots` | doc | uuid | reproducible dataset definitions | (user_id, created_at) |
 | `ingestion_runs` | doc | uuid | every sync/backfill/enrichment run | started_at, status, (kind, started_at) |
 | `backfill_jobs` | doc | uuid | checkpointed backfill progress | status |
-| `dead_letters` | doc | hash(source, record) | rejected/failing records | last_failure_at |
+| `dead_letters` | doc | hash(source, record) | rejected/failing records | last_failure_at, (source, source_event_id) |
 | `audit_log` | doc | uuid | privileged actions (FR-15) | at |
 | `schema_meta` | doc | `current` | applied schema version | — |
 | `event_in_region` | edge | — | events → regions | edge index |
@@ -106,3 +108,23 @@ enforce types, ranges, enums and the timestamp format.
 aborts on any exception, and retries the whole unit on write-write conflicts (error 1200) with
 jittered exponential backoff. Verified by `tests/integration/test_arango_foundation.py`
 (concurrent increments lose no update).
+
+## 6. Ingestion (L2)
+
+```text
+beat ─► sync_feed (lock) ─► UsgsClient.summary_feed ─► parse_feed ─► IngestionPipeline.ingest
+                                                            │            ├─ fast path: hash unchanged → bulk last_seen
+                                                            │            └─ per record: stream txn {claims, event,
+                                                            │               revision, raw payload, edges, observers}
+                                                            └─ rejected → dead_letters      failures → dead_letters
+      run doc (ingestion_runs): params, request manifests (url, status, attempts, sha256), counts, error
+important inserted/revised events ─► enrich_event (detail feed → events.enrichment.products)
+backfill job ─► windows (checkpoint after each) ─► count → split if ≥ limit → query → pipeline
+recover (10 min) ─► abandon dead runs, resume stalled/idle backfills
+```
+
+Outcomes per record: `inserted`, `revised` (tracked change → revision), `refreshed` (untracked
+change), `unchanged`, `stale` (older `source_updated_at`), `rejected` (contract violation),
+`failed` (rolled back + dead-lettered). Representational coercions in the normaliser: epoch ms →
+UTC ISO string, `tsunami` 0/1 → bool, CSV `ids`/`sources`/`types` → sorted lists, alert level
+lower-cased. Nothing else is inferred; missing values stay `null`.

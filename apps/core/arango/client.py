@@ -21,8 +21,18 @@ from config.env import get_settings
 
 
 def sync[T](result: T | AsyncJob[Any] | BatchJob[Any] | None) -> T:
-    """Narrow python-arango's ``Result[T]`` union: we only use synchronous execution."""
+    """Narrow python-arango's ``Result[T]`` union for APIs that never return None.
+
+    We only use synchronous execution, so async/batch jobs are a programming error.
+    """
     if result is None or isinstance(result, (AsyncJob, BatchJob)):
+        raise TypeError("expected a synchronous, non-null ArangoDB result")
+    return result
+
+
+def sync_optional[T](result: T | AsyncJob[Any] | BatchJob[Any] | None) -> T | None:
+    """Like :func:`sync` for APIs where None is a legitimate answer (e.g. ``collection.get``)."""
+    if isinstance(result, (AsyncJob, BatchJob)):
         raise TypeError("expected a synchronous ArangoDB result")
     return result
 

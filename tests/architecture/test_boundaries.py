@@ -24,6 +24,8 @@ PURE_MODULE_NAMES = {
     "differ.py",
     "matcher.py",
     "manifest.py",
+    "enrichment.py",
+    "networks.py",
 }
 
 

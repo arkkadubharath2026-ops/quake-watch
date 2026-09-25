@@ -18,6 +18,8 @@ VALID_EVENT = {
     "_key": "usgs_test1",
     "source": "USGS",
     "source_event_id": "test1",
+    "associated_ids": ["test1"],
+    "event_type": "earthquake",
     "magnitude": 4.2,
     "magnitude_type": "mb",
     "place": "10 km N of Somewhere, Chile",
@@ -76,6 +78,39 @@ class TestMigrations:
         assert "qw_stray_index" not in current
 
 
+class TestDataMigrations:
+    def test_v2_builds_identity_claims_following_merge_chains(
+        self, arango_db: StandardDatabase
+    ) -> None:
+        events = arango_db.collection(s.EVENTS)
+        live = {**VALID_EVENT, "associated_ids": ["test1", "x1"]}
+        middle = {
+            **VALID_EVENT,
+            "_key": "usgs_mid",
+            "source_event_id": "mid",
+            "associated_ids": ["mid", "x2"],
+            "merged_into": "usgs_old",
+        }
+        old = {
+            **VALID_EVENT,
+            "_key": "usgs_old",
+            "source_event_id": "old",
+            "associated_ids": ["old"],
+            "merged_into": "usgs_test1",
+        }
+        for doc in (live, middle, old):
+            events.insert(doc)
+        arango_db.collection(s.SCHEMA_META).update({"_key": "current", "version": 1})
+
+        report = apply_schema(arango_db)
+
+        assert report.data_migrations == ["v2:identity_claims (5 documents)"]
+        claims = {c["_key"]: c["event_key"] for c in arango_db.collection(s.EVENT_IDENTITIES)}
+        expected = ("usgs_test1", "usgs_x1", "usgs_mid", "usgs_x2", "usgs_old")
+        assert claims == dict.fromkeys(expected, "usgs_test1")
+        assert not apply_schema(arango_db).changed  # migration ran exactly once
+
+
 class TestCollectionRules:
     def test_valid_event_accepted(self, arango_db: StandardDatabase) -> None:
         arango_db.collection(s.EVENTS).insert(VALID_EVENT)
@@ -89,6 +124,8 @@ class TestCollectionRules:
             ("occurred_at", "2026-09-21 00:00"),
             ("alert", "purple"),
             ("payload_hash", "not-a-hash"),
+            ("associated_ids", []),
+            ("event_type", ""),
         ],
     )
     def test_invalid_event_rejected_by_db(

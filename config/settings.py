@@ -198,6 +198,18 @@ CELERY_TASK_TIME_LIMIT = 15 * 60
 CELERY_TASK_SOFT_TIME_LIMIT = 14 * 60
 CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 20 * 60}
 CELERY_TIMEZONE = "UTC"
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False  # keep structlog formatting in workers
+CELERY_BEAT_SCHEDULE = {
+    "sync-usgs-feed": {
+        "task": "ingestion.sync_feed",
+        "schedule": APP.sync_interval_seconds,
+        "options": {"expires": APP.sync_interval_seconds},  # drop stale ticks, never pile up
+    },
+    "ingestion-recovery": {"task": "ingestion.recover", "schedule": 600},
+}
+
+# Observers participating in the ingestion transaction (dotted paths; see apps.ingestion.observers)
+QUAKEWATCH_EVENT_OBSERVERS: list[str] = []
 
 # --- Logging -------------------------------------------------------------------------------
 LOGGING = build_logging_config(level=APP.log_level, json_output=APP.log_json)

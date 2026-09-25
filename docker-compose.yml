@@ -3,6 +3,7 @@
 name: quakewatch
 
 x-app: &app
+  image: quakewatch-app:${APP_VERSION:-dev}  # one image for web/worker/beat: they can never drift
   build:
     context: .
     dockerfile: docker/Dockerfile
@@ -33,7 +34,8 @@ services:
       - arango_data:/var/lib/arangodb3
       - arango_apps:/var/lib/arangodb3-apps
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null --user root:$$ARANGO_ROOT_PASSWORD http://127.0.0.1:8529/_api/version || exit 1"]
+      # The availability endpoint needs no credentials (keeps the root password out of probes).
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8529/_admin/server/availability || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 30

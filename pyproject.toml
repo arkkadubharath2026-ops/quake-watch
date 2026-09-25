@@ -31,7 +31,7 @@ ignore_missing_imports = false
 exclude = ["tests/", "migrations/", "\\.venv/", "\\.claude/"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "kombu.*", "rest_framework.*", "whitenoise.*", "respx.*"]
+module = ["celery.*", "kombu.*", "rest_framework.*", "whitenoise.*"]
 ignore_missing_imports = true
 follow_untyped_imports = false
 
@@ -41,7 +41,7 @@ django_settings_module = "config.settings"
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings_test"
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers -m \"not live and not e2e and not perf\""
 markers = [
   "integration: requires a running ArangoDB (docker compose up -d arangodb)",
   "e2e: browser end-to-end tests against a running server",
@@ -60,3 +60,10 @@ omit = ["*/migrations/*", "*/tests/*"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["apps", "config", "tests"]
+
+[tool.ruff.format]
+line-ending = "lf"
+
+[[tool.mypy.overrides]]
+module = ["apps.*.tasks", "apps.core.task_context"]
+disallow_untyped_decorators = false  # Celery decorators/signals are untyped

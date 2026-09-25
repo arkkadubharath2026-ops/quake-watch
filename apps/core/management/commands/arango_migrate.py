@@ -29,6 +29,7 @@ class Command(BaseCommand):
             ("indexes created", report.created_indexes),
             ("indexes replaced", report.replaced_indexes),
             ("indexes dropped", report.dropped_indexes),
+            ("data migrations", report.data_migrations),
         ):
             if items:
                 self.stdout.write(f"{label}: {', '.join(items)}")

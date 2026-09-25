@@ -14,7 +14,7 @@ from typing import Any
 from arango.database import StandardDatabase
 
 from apps.core.arango import schema as s
-from apps.core.arango.client import sync
+from apps.core.arango.client import sync, sync_optional
 from apps.core.clock import now_iso
 from config.logging import get_logger
 
@@ -29,6 +29,7 @@ class MigrationReport:
     dropped_indexes: list[str] = field(default_factory=list)
     view: str = "unchanged"
     graph: str = "unchanged"
+    data_migrations: list[str] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
@@ -39,6 +40,7 @@ class MigrationReport:
             or self.dropped_indexes
             or self.view != "unchanged"
             or self.graph != "unchanged"
+            or bool(self.data_migrations)
         )
 
 
@@ -99,8 +101,62 @@ def _schema_payload(rule: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+def _migrate_v2_identity_claims(db: StandardDatabase) -> int:
+    """Build ``event_identities`` claims for events ingested before schema v2.
+
+    Live events claim all their associated ids first (authoritative); ids held only by merged
+    records are then claimed for the live record at the end of their merge chain.
+    """
+    claims = db.collection(s.EVENT_IDENTITIES)
+    before = int(sync(claims.count()))
+    sync(
+        db.aql.execute(
+            """
+        FOR e IN events FILTER e.merged_into == null
+          FOR id IN e.associated_ids
+            INSERT {_key: CONCAT(LOWER(e.source), "_", id), source: e.source,
+                    source_event_id: id, event_key: e._key, claimed_at: @now}
+            INTO event_identities OPTIONS {overwriteMode: "ignore"}
+        """,
+            bind_vars={"now": now_iso()},
+        )
+    )
+    merged = list(
+        sync(
+            db.aql.execute(
+                "FOR e IN events FILTER e.merged_into != null "
+                "RETURN {key: e._key, into: e.merged_into, source: e.source, ids: e.associated_ids}"
+            )
+        )
+    )
+    targets = {m["key"]: m["into"] for m in merged}
+    for m in merged:
+        target, seen = m["into"], {m["key"]}
+        while target in targets and target not in seen:  # follow merge chains to the live record
+            seen.add(target)
+            target = targets[target]
+        for id_ in m["ids"]:
+            sync(
+                claims.insert(
+                    {
+                        "_key": f"{m['source'].lower()}_{id_}",
+                        "source": m["source"],
+                        "source_event_id": id_,
+                        "event_key": target,
+                        "claimed_at": now_iso(),
+                    },
+                    overwrite_mode="ignore",
+                )
+            )
+    return int(sync(claims.count())) - before
+
+
+DATA_MIGRATIONS = ((2, "identity_claims", _migrate_v2_identity_claims),)
+
+
 def apply_schema(db: StandardDatabase, *, drop_undeclared_indexes: bool = True) -> MigrationReport:
     report = MigrationReport()
+    previous_version = applied_version(db) or 0
 
     for spec in s.COLLECTIONS:
         if not sync(db.has_collection(spec.name)):
@@ -139,6 +195,11 @@ def apply_schema(db: StandardDatabase, *, drop_undeclared_indexes: bool = True) 
                 graph.replace_edge_definition(**definition)
                 report.graph = "updated"
 
+    for version, name, migration in DATA_MIGRATIONS:
+        if previous_version < version:
+            affected = migration(db)
+            report.data_migrations.append(f"v{version}:{name} ({affected} documents)")
+
     meta = db.collection(s.SCHEMA_META)
     meta.insert(
         {"_key": "current", "version": s.SCHEMA_VERSION, "applied_at": now_iso()},
@@ -153,6 +214,7 @@ def apply_schema(db: StandardDatabase, *, drop_undeclared_indexes: bool = True) 
         dropped_indexes=report.dropped_indexes,
         view=report.view,
         graph=report.graph,
+        data_migrations=report.data_migrations,
     )
     return report
 
@@ -160,5 +222,5 @@ def apply_schema(db: StandardDatabase, *, drop_undeclared_indexes: bool = True) 
 def applied_version(db: StandardDatabase) -> int | None:
     if not sync(db.has_collection(s.SCHEMA_META)):
         return None
-    doc = sync(db.collection(s.SCHEMA_META).get("current"))
+    doc = sync_optional(db.collection(s.SCHEMA_META).get("current"))
     return int(doc["version"]) if isinstance(doc, dict) else None

@@ -22,10 +22,11 @@ _SHARED_PROCESSORS: list[Any] = [
 
 
 def build_logging_config(*, level: str, json_output: bool) -> dict[str, Any]:
-    renderer: Any = (
-        structlog.processors.JSONRenderer()
+    # JSON needs exceptions pre-formatted into a field; the console renderer formats them itself.
+    renderer: list[Any] = (
+        [structlog.processors.format_exc_info, structlog.processors.JSONRenderer()]
         if json_output
-        else structlog.dev.ConsoleRenderer(colors=False)
+        else [structlog.dev.ConsoleRenderer(colors=False)]
     )
     structlog.configure(
         processors=[
@@ -44,8 +45,7 @@ def build_logging_config(*, level: str, json_output: bool) -> dict[str, Any]:
                 "()": structlog.stdlib.ProcessorFormatter,
                 "processors": [
                     structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-                    structlog.processors.format_exc_info,
-                    renderer,
+                    *renderer,
                 ],
                 "foreign_pre_chain": _SHARED_PROCESSORS,
             }

@@ -14,13 +14,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 GRAPH_NAME = "quakewatch_graph"
 EVENTS_SEARCH_VIEW = "events_search"
 
 # ---- Collection names (import these instead of string literals) ------------------------
 EVENTS = "events"
 EVENT_REVISIONS = "event_revisions"
+EVENT_IDENTITIES = "event_identities"
 RAW_PAYLOADS = "raw_payloads"
 REGIONS = "regions"
 NETWORKS = "networks"
@@ -54,6 +55,13 @@ def _nullable(type_: str, **extra: Any) -> dict[str, Any]:
 
 # ---- JSON-schema rules (DB-level integrity; mirrors the domain DTOs) ----------------------
 SOURCE_STATE_PROPERTIES: dict[str, Any] = {
+    "associated_ids": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 64,
+        "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
+    },
+    "event_type": {"type": "string", "minLength": 1, "maxLength": 40},
     "magnitude": _nullable("number", minimum=-2, maximum=11),
     "magnitude_type": _nullable("string", maxLength=16),
     "place": _nullable("string", maxLength=300),
@@ -71,6 +79,11 @@ SOURCE_STATE_PROPERTIES: dict[str, Any] = {
     "significance": _nullable("integer", minimum=0),
     "network": _nullable("string", maxLength=16),
     "detail_url": _nullable("string", maxLength=500),
+    "event_page_url": _nullable("string", maxLength=500),
+    "station_count": _nullable("integer", minimum=0),
+    "min_station_distance_deg": _nullable("number", minimum=0),
+    "rms_travel_time_residual": _nullable("number", minimum=0),
+    "azimuthal_gap_deg": _nullable("number", minimum=0, maximum=360),
     "products": {"type": "array", "items": {"type": "string", "maxLength": 64}, "maxItems": 64},
     "contributors": {"type": "array", "items": {"type": "string", "maxLength": 16}},
 }
@@ -95,10 +108,13 @@ EVENT_RULE: dict[str, Any] = {
         "payload_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "schema_version": {"type": "integer", "minimum": 1},
         "revision_policy_version": {"type": "integer", "minimum": 1},
+        "merged_into": _nullable("string"),
     },
     "required": [
         "source",
         "source_event_id",
+        "associated_ids",
+        "event_type",
         "occurred_at",
         "source_updated_at",
         "latitude",
@@ -203,7 +219,15 @@ COLLECTIONS: tuple[CollectionSpec, ...] = (
         rule=EVENT_RULE,
         purpose="Latest canonical representation of each source event.",
         indexes=(
-            _p("qw_events_source_identity", "source", "source_event_id", unique=True),
+            # merged_into is part of the key so a merged (superseded) record may keep its
+            # historical id while exactly one live record owns it (ADR-003).
+            _p(
+                "qw_events_source_identity",
+                "source",
+                "source_event_id",
+                "merged_into",
+                unique=True,
+            ),
             IndexSpec("qw_events_geo", "geo", ("coordinates",), geo_json=True),
             _p("qw_events_occurred_at", "occurred_at"),
             _p("qw_events_magnitude", "magnitude"),
@@ -217,6 +241,14 @@ COLLECTIONS: tuple[CollectionSpec, ...] = (
             _p("qw_revisions_event_rev", "event_key", "revision_number", unique=True),
             _p("qw_revisions_observed_at", "observed_at"),
         ),
+    ),
+    CollectionSpec(
+        EVENT_IDENTITIES,
+        purpose=(
+            "Identity claims: _key usgs_<id> -> event_key for every id ever associated with a live "
+            "event. Unique keys serialise concurrent writers of the same physical event (ADR-003)."
+        ),
+        indexes=(_p("qw_identities_event_key", "event_key"),),  # re-pointing claims on merge
     ),
     CollectionSpec(
         RAW_PAYLOADS,
@@ -267,7 +299,10 @@ COLLECTIONS: tuple[CollectionSpec, ...] = (
     CollectionSpec(
         DEAD_LETTERS,
         purpose="Rejected or repeatedly failing source records.",
-        indexes=(_p("qw_dead_last_failure", "last_failure_at"),),
+        indexes=(
+            _p("qw_dead_last_failure", "last_failure_at"),
+            _p("qw_dead_source_event", "source", "source_event_id"),
+        ),
     ),
     CollectionSpec(
         AUDIT_LOG,

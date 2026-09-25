@@ -3,6 +3,8 @@ from __future__ import annotations
 from arango.database import StandardDatabase
 from django.test import Client
 
+from apps.core.arango.schema import SCHEMA_VERSION
+
 
 def test_live_is_always_ok(client: Client) -> None:
     response = client.get("/health/live")
@@ -25,9 +27,13 @@ def test_ready_reports_schema_drift(client: Client, arango_db: StandardDatabase)
     try:
         response = client.get("/health/ready")
         assert response.status_code == 503
-        assert response.json()["checks"]["schema"] == {"ok": False, "applied": 0, "expected": 1}
+        assert response.json()["checks"]["schema"] == {
+            "ok": False,
+            "applied": 0,
+            "expected": SCHEMA_VERSION,
+        }
     finally:
-        arango_db.collection("schema_meta").update({"_key": "current", "version": 1})
+        arango_db.collection("schema_meta").update({"_key": "current", "version": SCHEMA_VERSION})
 
 
 def test_inbound_request_id_propagates(client: Client) -> None:

@@ -11,36 +11,30 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import cast
 
 import redis
 
-from config.env import get_settings
+from apps.core.redis_client import get_redis, key
 from config.logging import get_logger
 
 MAX_SAMPLES = 1000
-_COUNTERS_KEY = "qw:metrics:counters"
-_SAMPLES_PREFIX = "qw:metrics:samples:"
-_SAMPLES_INDEX = "qw:metrics:series"
 _WARN_INTERVAL_SECONDS = 60.0
 
 log = get_logger(__name__)
 _last_warning = 0.0
 
 
-@lru_cache(maxsize=1)
-def _client() -> redis.Redis:
-    return redis.Redis.from_url(
-        get_settings().redis_url,
-        socket_timeout=0.5,
-        socket_connect_timeout=0.5,
-        decode_responses=True,
-    )
+def _counters_key() -> str:
+    return key("metrics", "counters")
 
 
-def _namespace() -> str:
-    return "test:" if get_settings().env.value == "test" else ""
+def _series_key(name: str) -> str:
+    return key("metrics", "samples", name)
+
+
+def _index_key() -> str:
+    return key("metrics", "series")
 
 
 def _warn(exc: Exception) -> None:
@@ -53,18 +47,18 @@ def _warn(exc: Exception) -> None:
 
 def incr(name: str, amount: int = 1) -> None:
     try:
-        _client().hincrby(_namespace() + _COUNTERS_KEY, name, amount)
+        get_redis().hincrby(_counters_key(), name, amount)
     except redis.RedisError as exc:
         _warn(exc)
 
 
 def observe(name: str, value: float) -> None:
-    key = _namespace() + _SAMPLES_PREFIX + name
+    series = _series_key(name)
     try:
-        pipe = _client().pipeline(transaction=False)
-        pipe.lpush(key, value)
-        pipe.ltrim(key, 0, MAX_SAMPLES - 1)
-        pipe.sadd(_namespace() + _SAMPLES_INDEX, name)
+        pipe = get_redis().pipeline(transaction=False)
+        pipe.lpush(series, value)
+        pipe.ltrim(series, 0, MAX_SAMPLES - 1)
+        pipe.sadd(_index_key(), name)
         pipe.execute()
     except redis.RedisError as exc:
         _warn(exc)
@@ -90,9 +84,7 @@ def percentile(sorted_values: list[float], pct: float) -> float | None:
 
 def summarize(name: str) -> SeriesSummary:
     try:
-        raw = cast(
-            list[str], _client().lrange(_namespace() + _SAMPLES_PREFIX + name, 0, MAX_SAMPLES - 1)
-        )
+        raw = cast(list[str], get_redis().lrange(_series_key(name), 0, MAX_SAMPLES - 1))
     except redis.RedisError as exc:
         _warn(exc)
         raw = []  # degraded: report an empty series rather than failing the caller
@@ -109,7 +101,7 @@ def summarize(name: str) -> SeriesSummary:
 
 def counters() -> dict[str, int]:
     try:
-        raw = cast(dict[str, str], _client().hgetall(_namespace() + _COUNTERS_KEY))
+        raw = cast(dict[str, str], get_redis().hgetall(_counters_key()))
     except redis.RedisError as exc:
         _warn(exc)
         return {}
@@ -118,23 +110,20 @@ def counters() -> dict[str, int]:
 
 def series_names() -> list[str]:
     try:
-        return sorted(cast(set[str], _client().smembers(_namespace() + _SAMPLES_INDEX)))
+        return sorted(cast(set[str], get_redis().smembers(_index_key())))
     except redis.RedisError as exc:
         _warn(exc)
         return []
 
 
 def reset() -> None:
-    """Delete all metrics in the current namespace (used by tests and the admin reset action)."""
-    client = _client()
-    names = series_names()
-    keys = [_namespace() + _SAMPLES_PREFIX + n for n in names]
-    keys += [_namespace() + _COUNTERS_KEY, _namespace() + _SAMPLES_INDEX]
-    client.delete(*keys)
+    """Delete all metrics in the current namespace (tests and the admin reset action)."""
+    keys = [_series_key(n) for n in series_names()] + [_counters_key(), _index_key()]
+    get_redis().delete(*keys)
 
 
 def ping() -> bool:
     try:
-        return bool(_client().ping())
+        return bool(get_redis().ping())
     except redis.RedisError:
         return False
