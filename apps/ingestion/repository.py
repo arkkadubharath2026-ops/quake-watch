@@ -15,12 +15,85 @@ from typing import Any
 
 from arango.database import Database
 
+from apps.core.arango import catalog
 from apps.core.arango import schema as s
+from apps.core.arango.catalog import NamedQuery
 from apps.core.arango.client import sync, sync_optional
 from apps.core.arango.query import run_query
 from apps.core.clock import now_iso, to_iso, utc_now
 from apps.geo.regions import DerivedRegion
 from apps.ingestion.networks import network_name
+
+REPOINT_CLAIMS = catalog.register(
+    NamedQuery(
+        name="ingest_repoint_claims",
+        category="maintenance",
+        question="On merge, move every identity claim of the absorbed record to the survivor.",
+        aql="""
+        FOR c IN event_identities FILTER c.event_key == @loser
+          UPDATE c WITH {event_key: @primary, claimed_at: @at} IN event_identities
+        """,
+        sample_binds=lambda: {"loser": "usgs_x", "primary": "usgs_y", "at": "2026-01-01"},
+        expected_indexes=("qw_identities_event_key",),
+        features=("update", "persistent index"),
+        read_only=False,
+    )
+)
+
+RESOLVE_DEAD_LETTERS = catalog.register(
+    NamedQuery(
+        name="ingest_resolve_dead_letters",
+        category="maintenance",
+        question="Mark dead letters resolved once their record ingests successfully.",
+        aql="""
+        FOR d IN dead_letters
+          FILTER d.source == @source AND d.source_event_id IN @ids
+          FILTER d.resolved_at == null
+          UPDATE d WITH {resolved_at: @at} IN dead_letters
+          RETURN 1
+        """,
+        sample_binds=lambda: {"source": "USGS", "ids": ["x"], "at": "2026-01-01"},
+        expected_indexes=("qw_dead_source_event",),
+        features=("update", "composite index"),
+        read_only=False,
+    )
+)
+
+ABANDON_STALE_RUNS = catalog.register(
+    NamedQuery(
+        name="runs_abandon_stale",
+        category="maintenance",
+        question="Recovery: runs left 'running' by a dead worker become 'abandoned'.",
+        aql="""
+        FOR r IN ingestion_runs
+          FILTER r.status == "running" AND r.started_at < @threshold
+          UPDATE r WITH {status: "abandoned", finished_at: @now,
+                         error: {type: "Abandoned", message: "no completion recorded"}}
+          IN ingestion_runs
+          RETURN 1
+        """,
+        sample_binds=lambda: {"threshold": "2026-01-01", "now": "2026-01-01"},
+        expected_indexes=("qw_runs_status", "qw_runs_started_at"),
+        features=("update", "recovery"),
+        read_only=False,
+    )
+)
+
+
+@dataclass(frozen=True, slots=True)
+class EventWrite:
+    """Everything one ingested record writes (see :meth:`IngestionRepository.apply_write`)."""
+
+    event: dict[str, Any]
+    is_new: bool
+    source: str
+    claim_ids: Sequence[str]
+    raw: dict[str, Any]
+    revision: dict[str, Any] | None = None
+    region: DerivedRegion | None = None
+    relink_region: bool = False
+    network: str | None = None
+    relink_network: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,26 +158,8 @@ class IngestionRepository:
               RETURN FIRST(grouped)
             """,
             {"ids": list(ids), "prefix": f"{source.lower()}_"},
+            record_metrics=False,
         ).rows
-
-    def claim_new_identity(self, source: str, ids: Sequence[str], event_key: str) -> None:
-        """Claim every id for a *new* event. Plain inserts: a concurrent writer of the same
-        physical event collides here (write conflict / unique key) and its unit is retried."""
-        claims = self.db.collection(s.EVENT_IDENTITIES)
-        at = now_iso()
-        for id_ in ids:
-            sync(
-                claims.insert(
-                    {
-                        "_key": f"{source.lower()}_{id_}",
-                        "source": source,
-                        "source_event_id": id_,
-                        "event_key": event_key,
-                        "claimed_at": at,
-                    },
-                    silent=True,
-                )
-            )
 
     def claim_identity(self, source: str, ids: Sequence[str], event_key: str) -> None:
         """Claim (or re-point) ids for an existing live event."""
@@ -137,15 +192,7 @@ class IngestionRepository:
         )
         binds = {"loser": loser_key, "primary": primary_key, "at": at}
         # Separate statements: in AQL a second top-level FOR would nest inside the first.
-        run_query(
-            self.db,
-            "ingest_repoint_claims",
-            """
-            FOR c IN event_identities FILTER c.event_key == @loser
-              UPDATE c WITH {event_key: @primary, claimed_at: @at} IN event_identities
-            """,
-            binds,
-        )
+        run_query(self.db, REPOINT_CLAIMS.name, REPOINT_CLAIMS.aql, binds)
         run_query(
             self.db,
             "ingest_repoint_merge_chain",
@@ -163,15 +210,86 @@ class IngestionRepository:
                 {"loser": loser_key, "@edges": edge_collection},
             )
 
-    # ---- events and revisions -----------------------------------------------------------------
-    def insert_event(self, doc: dict[str, Any]) -> None:
-        sync(self.db.collection(s.EVENTS).insert(doc, silent=True))
+    # ---- consolidated write (one AQL statement per record) ------------------------------------
+    def apply_write(self, w: EventWrite) -> None:
+        """Execute every write for one record in a single multi-collection AQL statement.
 
-    def replace_event(self, doc: dict[str, Any]) -> None:
-        sync(self.db.collection(s.EVENTS).replace(doc, silent=True))
-
-    def append_revision(self, doc: dict[str, Any]) -> None:
-        sync(self.db.collection(s.EVENT_REVISIONS).insert(doc, silent=True))
+        Each collection is modified at most once (AQL rule). New events claim ids with plain
+        INSERTs so a concurrent writer of the same physical event fails with a conflict/unique
+        violation and is retried by the caller's transaction loop (ADR-003).
+        """
+        claim_op = (
+            "INSERT c INTO event_identities"
+            if w.is_new
+            else "UPSERT {_key: c._key} INSERT c "
+            "UPDATE {event_key: c.event_key, claimed_at: c.claimed_at} IN event_identities"
+        )
+        event_op = "INSERT @event INTO events" if w.is_new else "REPLACE @event IN events"
+        region_docs, region_edges, network_docs, network_edges = [], [], [], []
+        key = w.event["_key"]
+        if w.relink_region and w.region is not None:
+            region_docs.append(
+                {"_key": w.region.key, "name": w.region.name, "kind": w.region.kind,
+                 "method_version": w.region.method_version}
+            )  # fmt: skip
+            region_edges.append(
+                {"_key": key, "_from": f"events/{key}", "_to": f"regions/{w.region.key}"}
+            )
+        if w.relink_network and w.network:
+            code = w.network.lower()
+            network_docs.append({"_key": code, "code": code, "name": network_name(code)})
+            network_edges.append({"_key": key, "_from": f"events/{key}", "_to": f"networks/{code}"})
+        at = w.event["last_ingested_at"]
+        run_query(
+            self.db,
+            "ingest_apply_write",
+            f"""
+            LET ev = ({event_op})
+            LET claims = (FOR c IN @claims {claim_op})
+            LET revision = (FOR r IN @revisions INSERT r INTO event_revisions)
+            LET raw = (UPSERT {{_key: @raw._key}} INSERT @raw
+                       UPDATE {{last_fetched_at: @raw.last_fetched_at, expires_at: @raw.expires_at}}
+                       IN raw_payloads)
+            LET region = (FOR r IN @regions UPSERT {{_key: r._key}} INSERT r
+                          UPDATE UNSET(r, "_key") IN regions)
+            LET region_edge = (FOR e IN @region_edges
+                               INSERT e INTO event_in_region OPTIONS {{overwriteMode: "replace"}})
+            LET network = (FOR n IN @networks UPSERT {{_key: n._key}} INSERT n
+                           UPDATE UNSET(n, "_key") IN networks)
+            LET network_edge = (FOR e IN @network_edges
+                                INSERT e INTO event_reported_by_network
+                                OPTIONS {{overwriteMode: "replace"}})
+            RETURN 1
+            """,
+            {
+                "event": w.event,
+                "claims": [
+                    {
+                        "_key": f"{w.source.lower()}_{id_}",
+                        "source": w.source,
+                        "source_event_id": id_,
+                        "event_key": key,
+                        "claimed_at": at,
+                    }
+                    for id_ in w.claim_ids
+                ],
+                "revisions": [w.revision] if w.revision else [],
+                "raw": w.raw,
+                "regions": region_docs,
+                "region_edges": region_edges,
+                "networks": network_docs,
+                "network_edges": network_edges,
+            },
+            record_metrics=False,
+        )
+        if w.relink_region and w.region is None:
+            run_query(
+                self.db,
+                "ingest_unlink_region",
+                "REMOVE {_key: @k} IN event_in_region OPTIONS {ignoreErrors: true}",
+                {"k": key},
+                record_metrics=False,
+            )
 
     def touch_seen(self, keys: Iterable[str], seen_at: str, run_id: str | None) -> int:
         key_list = list(keys)
@@ -188,98 +306,6 @@ class IngestionRepository:
             {"keys": key_list, "at": seen_at, "run": run_id},
         )
         return len(key_list)
-
-    # ---- provenance ---------------------------------------------------------------------------
-    def store_raw_payload(
-        self,
-        *,
-        payload_hash: str,
-        source: str,
-        source_event_id: str | None,
-        payload: dict[str, Any],
-        fetched_at: str,
-        expires_at_epoch: int,
-        run_id: str | None,
-    ) -> None:
-        run_query(
-            self.db,
-            "ingest_store_raw_payload",
-            """
-            UPSERT {_key: @hash}
-            INSERT {_key: @hash, source: @source, source_event_id: @id, payload: @payload,
-                    first_fetched_at: @at, last_fetched_at: @at, expires_at: @expires,
-                    ingestion_run_id: @run}
-            UPDATE {last_fetched_at: @at, expires_at: @expires}
-            IN raw_payloads
-            """,
-            {
-                "hash": payload_hash,
-                "source": source,
-                "id": source_event_id,
-                "payload": payload,
-                "at": fetched_at,
-                "expires": expires_at_epoch,
-                "run": run_id,
-            },
-        )
-
-    # ---- graph ---------------------------------------------------------------------------------
-    def link_region(self, event_key: str, region: DerivedRegion | None) -> None:
-        edges = self.db.collection(s.EVENT_IN_REGION)
-        if region is None:
-            run_query(
-                self.db,
-                "ingest_unlink_region",
-                "REMOVE {_key: @k} IN event_in_region OPTIONS {ignoreErrors: true}",
-                {"k": event_key},
-            )
-            return
-        run_query(
-            self.db,
-            "ingest_upsert_region",
-            """
-            UPSERT {_key: @key}
-            INSERT {_key: @key, name: @name, kind: @kind, method_version: @mv}
-            UPDATE {name: @name, kind: @kind, method_version: @mv}
-            IN regions
-            """,
-            {
-                "key": region.key,
-                "name": region.name,
-                "kind": region.kind,
-                "mv": region.method_version,
-            },
-        )
-        sync(
-            edges.insert(
-                {"_key": event_key, "_from": f"events/{event_key}", "_to": f"regions/{region.key}"},
-                overwrite_mode="replace",
-                silent=True,
-            )
-        )
-
-    def link_network(self, event_key: str, code: str | None) -> None:
-        if not code:
-            return
-        code = code.lower()
-        run_query(
-            self.db,
-            "ingest_upsert_network",
-            """
-            UPSERT {_key: @code}
-            INSERT {_key: @code, code: @code, name: @name}
-            UPDATE {name: @name}
-            IN networks
-            """,
-            {"code": code, "name": network_name(code)},
-        )
-        sync(
-            self.db.collection(s.EVENT_REPORTED_BY_NETWORK).insert(
-                {"_key": event_key, "_from": f"events/{event_key}", "_to": f"networks/{code}"},
-                overwrite_mode="replace",
-                silent=True,
-            )
-        )
 
     # ---- dead letters --------------------------------------------------------------------------
     def record_dead_letter(
@@ -326,14 +352,8 @@ class IngestionRepository:
             return 0
         rows = run_query(
             self.db,
-            "ingest_resolve_dead_letters",
-            """
-            FOR d IN dead_letters
-              FILTER d.source == @source AND d.resolved_at == null
-                AND d.source_event_id IN @ids
-              UPDATE d WITH {resolved_at: @at} IN dead_letters
-              RETURN 1
-            """,
+            RESOLVE_DEAD_LETTERS.name,
+            RESOLVE_DEAD_LETTERS.aql,
             {"source": source, "ids": list(source_event_ids), "at": now_iso()},
         ).rows
         return len(rows)
@@ -413,15 +433,8 @@ class RunRepository:
         """Runs stuck in ``running`` (worker died mid-run) become ``abandoned``."""
         rows = run_query(
             self.db,
-            "runs_abandon_stale",
-            """
-            FOR r IN ingestion_runs
-              FILTER r.status == "running" AND r.started_at < @threshold
-              UPDATE r WITH {status: "abandoned", finished_at: @now,
-                             error: {type: "Abandoned", message: "no completion recorded"}}
-              IN ingestion_runs
-              RETURN 1
-            """,
+            ABANDON_STALE_RUNS.name,
+            ABANDON_STALE_RUNS.aql,
             {"threshold": to_iso(utc_now() - older_than), "now": now_iso()},
         ).rows
         return len(rows)

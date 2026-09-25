@@ -48,6 +48,7 @@ def run_query(
     full_count: bool = False,
     max_runtime: int = DEFAULT_MAX_RUNTIME_S,
     batch_size: int = 1000,
+    record_metrics: bool = True,
 ) -> QueryResult:
     started = time.perf_counter()
     try:
@@ -70,7 +71,8 @@ def run_query(
         log.error("aql_failed", query=name, error_code=exc.error_code, error=exc.error_message)
         raise
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
-    metrics.observe(f"aql_latency_ms:{name}", duration_ms)
+    if record_metrics:  # hot write paths opt out; they report per-batch metrics instead
+        metrics.observe(f"aql_latency_ms:{name}", duration_ms)
     if duration_ms >= SLOW_QUERY_MS:
         log.warning("aql_slow", query=name, duration_ms=duration_ms)
     total = stats.get("fullCount", stats.get("full_count")) if full_count else None
@@ -84,8 +86,18 @@ def explain(db: Database, aql: str, bind_vars: Mapping[str, Any] | None = None) 
 
 
 def indexes_used(plan: dict[str, Any]) -> list[str]:
+    """Index names (or types) used by a plan, including traversal edge indexes."""
     names: list[str] = []
-    for node in plan.get("nodes", []):
-        for index in node.get("indexes", []) or []:
-            names.append(str(index.get("name") or index.get("type")))
+
+    def collect(entries: Any) -> None:
+        if isinstance(entries, list):
+            for index in entries:
+                if isinstance(index, dict):
+                    names.append(str(index.get("name") or index.get("type")))
+        elif isinstance(entries, dict):  # traversal nodes: {"base": [...], "levels": {...}}
+            for value in entries.values():
+                collect(value)
+
+    for node in plan.get("nodes", []):  # subqueries are flattened into the node list
+        collect(node.get("indexes"))
     return names

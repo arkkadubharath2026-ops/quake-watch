@@ -9,4 +9,5 @@ pytest-playwright>=0.7,<1
 ruff>=0.13,<1             # lint + format
 mypy>=1.18,<2             # static type checking
 django-stubs>=5.2,<7
+djangorestframework-stubs>=3.16,<4  # typed DRF boundary (views, requests, responses)
 pip-audit>=2.9,<3         # dependency vulnerability scanning (CI)

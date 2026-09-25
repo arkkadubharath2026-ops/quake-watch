@@ -240,6 +240,8 @@ COLLECTIONS: tuple[CollectionSpec, ...] = (
         indexes=(
             _p("qw_revisions_event_rev", "event_key", "revision_number", unique=True),
             _p("qw_revisions_observed_at", "observed_at"),
+            # revision analytics ("status"/"magnitude" IN changed_fields[*]), see AQL_QUERIES.md
+            _p("qw_revisions_changed_fields", "changed_fields[*]"),
         ),
     ),
     CollectionSpec(

@@ -1,41 +1,41 @@
 # Graph Report - Bharath DBMS project  (2026-09-25)
 
 ## Corpus Check
-- 75 files · ~25,150 words
+- 117 files · ~42,511 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 5 file(s) not represented in the graph (top: (none) 4, .example 1)
+- Unclassified: 8 file(s) not represented in the graph (top: (none) 4, .geojson 3, .example 1)
 
 ## Summary
-- 754 nodes · 1026 edges · 69 communities (54 shown, 15 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 14 edges (avg confidence: 0.91)
+- 1318 nodes · 2701 edges · 103 communities (80 shown, 23 thin omitted)
+- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 139 edges (avg confidence: 0.93)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e6cc538e`
+- Built from commit: `aa0bad1b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - QuakeWatch
-- run_in_transaction
-- AppSettings
+- StandardDatabase
+- to_iso
 - Django Security Best Practices
 - api.py
 - metrics.py
 - django_apps
 - client.py
-- query.py
+- services.py
 - Django + Celery Async Task Patterns
-- middleware.py
+- CorrelationIdMiddleware
 - Frontend Accessibility Patterns
-- ruff_on_edit.py
-- migrate.py
+- env.py
+- sync
 - a11y-architect.md
 - Review Priorities
 - Architecture Decision Records
 - Review Priorities
 - Security Reviewer
-- test_boundaries.py
+- Path
 - health.py
 - QuakeWatch — Engineering System Design (ESD)
 - Document Collections
@@ -48,7 +48,7 @@
 - QuakeWatch — Product Requirements Document (PRD)
 - 16. Testing Strategy
 - 4. User Problems and Product Responses
-- Command
+- BaseCommand
 - 13. Reliability
 - 11. Competitive Positioning
 - 7. Core User Journeys
@@ -57,7 +57,7 @@
 - ADR-002: Modular Django monolith with background workers
 - ADR-009: Django auth and sessions on SQLite; domain data in ArangoDB
 - ADR-010: Timestamp representation and source/derived separation
-- Dependencies and why each exists
+- ARCHITECTURE.md
 - 6. Constraints and Indexes
 - 12. Research-Paper Potential
 - 3. Target Users
@@ -68,96 +68,126 @@
 - 4. Source Integration
 - 13. Success Metrics
 - arangodb-reviewer.md
-- pytest_collection_modifyitems
+- CircuitBreaker
 - 18. Deployment Profiles
 - 3. Technology Stack
 - entrypoint.sh
 - quakewatch
+- IngestionPipeline
+- test_geo.py
+- tasks.py
+- revision_policy.py
+- test_ingestion_services.py
+- RunRepository
+- test_tasks_and_commands.py
+- normalize_feature
+- usgs_models.py
+- CanonicalEventInput
+- UsgsClient
+- errors.py
+- pipeline.py
+- typing
+- ._process_window
+- test_usgs_contract.py
+- repository.py
+- SourceSchemaError
+- parse_feed
+- AppSettings
+- QuakeWatch Architecture
+- BackfillInterrupted
+- ADR-003: Canonical event + immutable revisions, with identity claims
+- run_in_transaction
+- usgs.py
+- context_processors.py
+- .__call__
+- Command
+- AppConfig
+- CommandParser
 
 ## God Nodes (most connected - your core abstractions)
-1. `QuakeWatch — Engineering System Design (ESD)` - 23 edges
-2. `QuakeWatch` - 19 edges
-3. `sync()` - 16 edges
-4. `AppSettings` - 16 edges
-5. `QuakeWatch — Product Requirements Document (PRD)` - 16 edges
-6. `apply_schema()` - 14 edges
-7. `Django Security Best Practices` - 14 edges
-8. `run_in_transaction()` - 13 edges
-9. `Django + Celery Async Task Patterns` - 13 edges
-10. `ensure_database()` - 12 edges
+1. `CircuitBreaker` - 53 edges
+2. `IngestionPipeline` - 37 edges
+3. `RunRepository` - 35 edges
+4. `BackfillService` - 34 edges
+5. `UsgsClient` - 32 edges
+6. `sync()` - 31 edges
+7. `FeedSyncService` - 23 edges
+8. `QuakeWatch — Engineering System Design (ESD)` - 23 edges
+9. `IngestionRepository` - 22 edges
+10. `QuakeWatch` - 21 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `4. Cross-cutting concerns` --references--> `run_query()`  [INFERRED]
-  docs/ARCHITECTURE.md → apps/core/arango/query.py
 - `5. Transactions and concurrency` --references--> `run_in_transaction()`  [INFERRED]
   docs/ARCHITECTURE.md → apps/core/arango/transactions.py
+- `Identity claims (`event_identities`)` --references--> `event_key()`  [INFERRED]
+  docs/adr/ADR-003-canonical-event-and-revisions.md → apps/earthquakes/domain.py
+- `Runtime (Python)` --references--> `CanonicalEventInput`  [INFERRED]
+  docs/DEPENDENCIES.md → apps/earthquakes/domain.py
 - `Relational rubric mapping (ESD §19)` --references--> `run_in_transaction()`  [INFERRED]
   docs/ARCHITECTURE.md → apps/core/arango/transactions.py
-- `4. Cross-cutting concerns` --references--> `AppSettings`  [INFERRED]
-  docs/ARCHITECTURE.md → config/env.py
-- `4. Cross-cutting concerns` --references--> `CorrelationIdMiddleware`  [INFERRED]
-  docs/ARCHITECTURE.md → apps/core/middleware.py
+- `Decision` --references--> `payload_hash()`  [INFERRED]
+  docs/adr/ADR-007-raw-data-retention.md → apps/ingestion/normalizer.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (69 total, 15 thin omitted)
+## Communities (103 total, 23 thin omitted)
 
 ### Community 0 - "QuakeWatch"
 Cohesion: 0.04
-Nodes (45): 1. Earthquake Record Revision Dynamics, 2. Multi-Source Consistency, 3. Revision-Likelihood Modeling, 4. Spatiotemporal Sequence Analysis, Academic Requirements Covered, Alerts / Watch Rules, Analytics, Competitor / Reference Systems (+37 more)
+Nodes (49): 1. Earthquake Record Revision Dynamics, 2. Multi-Source Consistency, 3. Revision-Likelihood Modeling, 4. Spatiotemporal Sequence Analysis, Academic Requirements Covered, Alerts / Watch Rules, Analytics, Competitor / Reference Systems (+41 more)
 
-### Community 1 - "run_in_transaction"
-Cohesion: 0.07
-Nodes (22): _abort_quietly(), _is_conflict(), StandardDatabase, T, run_in_transaction(), BaseException, 1. High-level design, 2. Module map and layering (+14 more)
+### Community 1 - "StandardDatabase"
+Cohesion: 0.12
+Nodes (10): parametrize, StandardDatabase, Two writers increment the same doc; conflict retries must not lose an update., TestCollectionRules, TestDataMigrations, TestMigrations, TestQueryRunner, TestTransactions (+2 more)
 
-### Community 2 - "AppSettings"
-Cohesion: 0.10
-Nodes (17): from_epoch_ms(), from_iso(), now_iso(), Time utilities. Timestamps are persisted as fixed-width ISO-8601 UTC strings…, to_iso(), utc_now(), percentile(), Nearest-rank percentile on an ascending list. (+9 more)
+### Community 2 - "to_iso"
+Cohesion: 0.20
+Nodes (10): from_epoch_ms(), from_iso(), Time utilities. Timestamps are persisted as fixed-width ISO-8601 UTC strings…, to_iso(), utc_now(), enrichment_is_stale(), timedelta, Jobs left ``running`` by a dead worker (no heartbeat) go back to ``pending``. (+2 more)
 
 ### Community 3 - "Django Security Best Practices"
 Cohesion: 0.06
 Nodes (33): API Security, Authentication, Authentication for APIs, Authorization, Content Security Policy, Core Security Settings, CSRF Protection, Custom Permissions (+25 more)
 
 ### Community 4 - "api.py"
-Cohesion: 0.09
-Nodes (28): error_body(), exception_handler(), page_params(), PageParams, paginated(), Any, Exception, Shared API plumbing: error envelope, exception mapping, pagination parameters. (+20 more)
+Cohesion: 0.15
+Nodes (15): error_body(), exception_handler(), page_params(), PageParams, paginated(), Any, Exception, Shared API plumbing: error envelope, exception mapping, pagination parameters. (+7 more)
 
 ### Community 5 - "metrics.py"
-Cohesion: 0.11
-Nodes (30): _client(), counters(), incr(), _namespace(), observe(), ping(), Exception, Lightweight operational metrics stored in Redis. Counters are Redis hash… (+22 more)
+Cohesion: 0.09
+Nodes (33): Distributed job locks on Redis (prevents overlapping scheduled runs of the same…, counters(), _counters_key(), incr(), _index_key(), observe(), percentile(), ping() (+25 more)
 
 ### Community 6 - "django_apps"
 Cohesion: 0.07
-Nodes (19): AccountsConfig, AppConfig, AlertsConfig, AppConfig, AnalyticsConfig, AppConfig, CoreConfig, AppConfig (+11 more)
+Nodes (19): AppConfig, AccountsConfig, AppConfig, AlertsConfig, AppConfig, AnalyticsConfig, AppConfig, CoreConfig (+11 more)
 
 ### Community 7 - "client.py"
-Cohesion: 0.13
-Nodes (24): _cached_db(), _connect(), database_name(), drop_database(), ensure_database(), get_client(), get_db(), StandardDatabase (+16 more)
+Cohesion: 0.09
+Nodes (33): _cached_db(), _connect(), database_name(), drop_database(), ensure_database(), get_client(), StandardDatabase, ArangoDB connection management. One :class:`ArangoClient` per process (it owns… (+25 more)
 
-### Community 8 - "query.py"
-Cohesion: 0.12
-Nodes (23): apps_core_arango, explain(), indexes_used(), Any, QueryResult, Instrumented AQL execution. All repositories execute AQL through…, Return the optimizer's chosen plan (used by benchmarks and the ops diagnostics…, run_query() (+15 more)
+### Community 8 - "services.py"
+Cohesion: 0.20
+Nodes (17): apps_core, Instrumented AQL execution. All repositories execute AQL through…, Stream-transaction helpers. :func:`run_in_transaction` executes a unit of work…, Request middleware: correlation IDs and request timing/outcome logging +…, Resilience primitives: jittered exponential backoff and a shared circuit…, Resilient HTTP client for upstream sources (the only module family allowed to…, Ingestion application services: feed sync, checkpointed backfill, detail…, arango_exceptions (+9 more)
 
 ### Community 9 - "Django + Celery Async Task Patterns"
 Cohesion: 0.07
 Nodes (26): Anti-Patterns, Basic Task, Beat Scheduling (Periodic Tasks), Calling Tasks, Canvas: Chaining and Grouping Tasks, `celery.py` — App Entrypoint, Code-Defined Schedule, Database-Defined Schedule (via django-celery-beat) (+18 more)
 
-### Community 10 - "middleware.py"
-Cohesion: 0.11
-Nodes (17): Any, HttpRequest, site(), CorrelationIdMiddleware, new_correlation_id(), HttpRequest, Request middleware: correlation IDs and request timing/outcome logging +…, Accept a well-formed inbound X-Request-ID or mint one; bind it to all logs. (+9 more)
+### Community 10 - "CorrelationIdMiddleware"
+Cohesion: 0.24
+Nodes (8): CorrelationIdMiddleware, new_correlation_id(), HttpRequest, Accept a well-formed inbound X-Request-ID or mint one; bind it to all logs., Log endpoint/duration/outcome for every request and feed API latency metrics., RequestTimingMiddleware, 4. Cross-cutting concerns, HttpResponse
 
 ### Community 11 - "Frontend Accessibility Patterns"
 Cohesion: 0.09
 Nodes (22): Anti-Patterns, ARIA Attributes, aria-describedby, aria-expanded and aria-controls, aria-label vs aria-labelledby, aria-live for Dynamic Content, Checklist, Complete Accessible Form (+14 more)
 
-### Community 12 - "ruff_on_edit.py"
-Cohesion: 0.10
-Nodes (13): PreToolUse hook: block Claude from writing real secret files (.env, *.pem,…, find_ruff(), main(), Path, PostToolUse hook: format + lint-fix a Python file right after Claude edits it.…, Celery application. Beat schedule is defined in apps.ingestion.schedule., django_core_asgi, django_core_wsgi (+5 more)
+### Community 12 - "env.py"
+Cohesion: 0.06
+Nodes (41): ast, PreToolUse hook: block Claude from writing real secret files (.env, *.pem,…, find_ruff(), main(), Path, PostToolUse hook: format + lint-fix a Python file right after Claude edits it.…, Celery application. Beat schedule is defined in apps.ingestion.schedule., Environment (+33 more)
 
-### Community 13 - "migrate.py"
-Cohesion: 0.20
-Nodes (16): Any, T, Narrow python-arango's ``Result[T]`` union: we only use synchronous execution., sync(), applied_version(), apply_schema(), MigrationReport, _normalize_declared() (+8 more)
+### Community 13 - "sync"
+Cohesion: 0.05
+Nodes (44): Any, T, Narrow python-arango's ``Result[T]`` union for APIs that never return None. We…, Like :func:`sync` for APIs where None is a legitimate answer (e.g.…, sync(), sync_optional(), applied_version(), apply_schema() (+36 more)
 
 ### Community 14 - "a11y-architect.md"
 Cohesion: 0.11
@@ -179,13 +209,9 @@ Nodes (14): Approval Criteria, CRITICAL — Error Handling, CRITICAL — Securit
 Cohesion: 0.13
 Nodes (14): 1. Initial Scan, 2. OWASP Top 10 Check, 3. Code Pattern Review, Analysis Commands, Common False Positives, Core Responsibilities, Emergency Response, Key Principles (+6 more)
 
-### Community 19 - "test_boundaries.py"
-Cohesion: 0.37
-Nodes (13): ast, _imports(), _is_repository(), _pure_modules(), parametrize, Path, _python_files(), Architecture fitness tests: enforce module boundaries from CLAUDE.md /… (+5 more)
-
 ### Community 20 - "health.py"
-Cohesion: 0.22
-Nodes (12): apps_core, ping(), Readiness probe: can we reach the server and our database?, live(), HttpRequest, Liveness / readiness probes (ESD §15). ``/health/live`` — the process is up (no…, ready(), django_views_decorators_cache (+4 more)
+Cohesion: 0.24
+Nodes (11): ping(), Readiness probe: can we reach the server and our database?, live(), HttpRequest, Liveness / readiness probes (ESD §15). ``/health/live`` — the process is up (no…, ready(), django_views_decorators_cache, django_views_decorators_http (+3 more)
 
 ### Community 21 - "QuakeWatch — Engineering System Design (ESD)"
 Cohesion: 0.15
@@ -196,8 +222,8 @@ Cohesion: 0.15
 Nodes (13): 5. ArangoDB Data Model, `alert_matches`, `alert_rules`, `dead_letters`, Document Collections, Edge Collections, `event_revisions`, `events` (+5 more)
 
 ### Community 23 - "schema.py"
-Cohesion: 0.25
-Nodes (9): collection_spec(), CollectionSpec, IndexSpec, _nullable(), _p(), Any, Declarative ArangoDB schema for QuakeWatch (ESD §5, §6). This module is the…, _ts() (+1 more)
+Cohesion: 0.29
+Nodes (8): collection_spec(), CollectionSpec, IndexSpec, _nullable(), _p(), Any, Declarative ArangoDB schema for QuakeWatch (ESD §5, §6). This module is the…, _ts()
 
 ### Community 24 - "QuakeWatch verification gate"
 Cohesion: 0.18
@@ -231,10 +257,6 @@ Nodes (7): 16. Testing Strategy, Contract, End-to-End, Integration, Performance,
 Cohesion: 0.29
 Nodes (7): 4. User Problems and Product Responses, P1 — Data is available but fragmented, P2 — Earthquake records change after first publication, P3 — Maps alone are not enough, P4 — Alerts can be opaque, P5 — Research datasets are difficult to reproduce, P6 — Data trust is invisible
 
-### Community 32 - "Command"
-Cohesion: 0.33
-Nodes (4): Command, Any, BaseCommand, CommandParser
-
 ### Community 33 - "13. Reliability"
 Cohesion: 0.33
 Nodes (6): 13. Reliability, Circuit Breaker, Dead Letters, Idempotency, Retries, Timeouts
@@ -267,8 +289,8 @@ Nodes (4): ADR-009: Django auth and sessions on SQLite; domain data in ArangoDB,
 Cohesion: 0.40
 Nodes (4): ADR-010: Timestamp representation and source/derived separation, Consequences, Context, Decision
 
-### Community 41 - "Dependencies and why each exists"
-Cohesion: 0.40
+### Community 41 - "ARCHITECTURE.md"
+Cohesion: 0.22
 Nodes (4): Dependencies and why each exists, Development / test, Frontend (vendored under `static/vendor`, no build step, no CDN at runtime), Runtime (Python)
 
 ### Community 42 - "6. Constraints and Indexes"
@@ -307,9 +329,9 @@ Nodes (4): 4.1 USGS Summary Feed Adapter, 4.2 Catalog API Adapter, 4.3 Detail Fe
 Cohesion: 0.50
 Nodes (4): 13. Success Metrics, Academic, Product, Research Readiness
 
-### Community 52 - "pytest_collection_modifyitems"
-Cohesion: 0.67
-Nodes (3): Config, Item, pytest_collection_modifyitems()
+### Community 52 - "CircuitBreaker"
+Cohesion: 0.07
+Nodes (27): backoff_delay(), CircuitBreaker, Full-jitter exponential backoff for retry ``attempt`` (1-based). An upstream…, Response, ResilientHttpClient, _retry_after(), BaseTransport, NoReturn (+19 more)
 
 ### Community 53 - "18. Deployment Profiles"
 Cohesion: 0.67
@@ -319,25 +341,137 @@ Nodes (3): 18. Deployment Profiles, Local / College Demo, Small Cloud Demo
 Cohesion: 0.67
 Nodes (3): 3. Technology Stack, Core, Recommended Supporting Components
 
+### Community 69 - "IngestionPipeline"
+Cohesion: 0.12
+Nodes (31): NormalizedRecord, EventChange, IngestionPipeline, unit(), Database, Exception, Return the number of side effects produced (e.g. alert matches)., Outcome (+23 more)
+
+### Community 70 - "test_geo.py"
+Cohesion: 0.09
+Nodes (17): BoundingBox, haversine_km(), InvalidGeometry, Geodesic helpers (pure). Distances use the haversine formula on a spherical…, Viewport box. ``west > east`` means the box crosses the antimeridian., Parse ``south,west,north,east`` (Leaflet ``toBBoxString`` order is w,s,e,n —…, GeoJSON polygon rings (lon, lat), split at the antimeridian when needed., Approximate fraction of the globe covered (for choosing clustering granularity). (+9 more)
+
+### Community 71 - "tasks.py"
+Cohesion: 0.11
+Nodes (27): get_db(), Handle to the configured application database (``<db>_test`` under tests)., job_lock(), Yield True if the lock was acquired; the body should skip work when False., build_usgs_client(), usgs_breaker(), Any, Command (+19 more)
+
+### Community 72 - "revision_policy.py"
+Cohesion: 0.14
+Nodes (22): apps_ingestion, diff(), field_changed(), FieldChange, FieldRule, _numeric_changed(), Any, Versioned meaningful-revision policy (ESD §8) (pure). A *revision* is recorded… (+14 more)
+
+### Community 73 - "test_ingestion_services.py"
+Cohesion: 0.20
+Nodes (12): UpstreamError that also carries the provenance of the failed call., UpstreamRequestFailed, EnrichmentService, FeedSyncService, Lazy detail-feed enrichment (ESD §4.3). Failure never affects the base event…, Scheduled synchronisation of a USGS summary feed (FR-01)., StandardDatabase, Feed sync, backfill and enrichment services on real ArangoDB with a simulated… (+4 more)
+
+### Community 74 - "RunRepository"
+Cohesion: 0.22
+Nodes (13): ingestion_runs + backfill_jobs bookkeeping (outside the per-record…, RunRepository, BackfillRequest, BackfillService, Bounded, checkpointed historical import through the FDSN catalog API (FR-02,…, FakeCatalog, Any, MonkeyPatch (+5 more)
+
+### Community 75 - "test_tasks_and_commands.py"
+Cohesion: 0.17
+Nodes (13): django_core_management, Handler, httpx, io, fake_usgs(), fixture, MonkeyPatch, StandardDatabase (+5 more)
+
+### Community 76 - "normalize_feature"
+Cohesion: 0.13
+Nodes (15): _csv(), normalize_feature(), reject(), payload_hash(), Any, Stable SHA-256 of a JSON payload (sorted keys, compact separators)., RecordRejected, _summarize() (+7 more)
+
+### Community 77 - "usgs_models.py"
+Cohesion: 0.19
+Nodes (17): _Lenient, BaseModel, Strict contract for USGS GeoJSON payloads (summary feed, catalog query, detail…, Top level only; features are validated one by one so a bad record never sinks a…, UsgsCatalogCount, UsgsDetailFeature, UsgsDetailProperties, UsgsFeature (+9 more)
+
+### Community 78 - "CanonicalEventInput"
+Cohesion: 0.13
+Nodes (9): CanonicalEventInput, is_important(), Any, BaseModel, datetime, Events that get eager detail enrichment (ESD §4.3 "important events")., JSON-safe source state (persisted on the event and in revision snapshots)., field_validator (+1 more)
+
+### Community 79 - "UsgsClient"
+Cohesion: 0.13
+Nodes (12): UsgsClient, EventObserver, StandardDatabase, Participates in the ingestion transaction for inserted/revised events., StandardDatabase, Mode, Protocol, breaker() (+4 more)
+
+### Community 80 - "errors.py"
+Cohesion: 0.22
+Nodes (11): CircuitOpen, Conflict, DatabaseUnavailable, NotFound, PermissionDenied, Any, Exception, QuakeWatchError (+3 more)
+
+### Community 81 - "pipeline.py"
+Cohesion: 0.23
+Nodes (12): DerivedRegion, Derive an application region from a USGS ``place`` string (pure,…, region_from_place(), slugify(), _event_doc(), _pick_primary(), Any, Ingestion pipeline (ESD §7): identify → diff → transactional upsert →… (+4 more)
+
+### Community 82 - "typing"
+Cohesion: 0.21
+Nodes (9): Earthquake domain model (pure). :class:`CanonicalEventInput` is the source-…, _date(), CommandParser, datetime, USGS GeoJSON → :class:`CanonicalEventInput` (pure). A feed is parsed in two…, django_core_management_base, json, pydantic (+1 more)
+
+### Community 83 - "._process_window"
+Cohesion: 0.25
+Nodes (7): IngestionStats, _correlation_id(), _error_dict(), Any, datetime, RunResult, RunStatus
+
+### Community 84 - "test_usgs_contract.py"
+Cohesion: 0.21
+Nodes (8): copy, load_fixture(), fixture, Contract tests against *recorded* real USGS payloads (tests/fixtures/usgs). If…, sample_feature(), summary_feed(), TestCatalogAndDetail, timedelta
+
+### Community 85 - "repository.py"
+Cohesion: 0.20
+Nodes (8): apps_core_arango, ArangoDB persistence infrastructure. ``Database`` (any handle, including stream…, network_name(), Reference names for common ANSS / USGS contributing network codes (pure). Only…, Write-path persistence for ingestion: events, revisions, raw payloads, graph,…, arango_database, hashlib, Real-ArangoDB tests for schema reconciliation, validation rules and…
+
+### Community 86 - "SourceSchemaError"
+Cohesion: 0.24
+Nodes (6): Upstream payload does not match the expected contract., SourceSchemaError, ValidationFailed, FetchResult, _fdsn_time(), datetime
+
+### Community 87 - "parse_feed"
+Cohesion: 0.24
+Nodes (8): parse_feed(), ParsedFeed, parametrize, TestMalformedRecords, Opt-in live contract tests: the real adapter against the real USGS API. Run…, test_live_catalog_count_and_query_contract(), test_live_detail_contract(), test_live_summary_feed_contract()
+
+### Community 88 - "AppSettings"
+Cohesion: 0.29
+Nodes (4): BaseSettings, AppSettings, Tests always run against an isolated ``<db>_test`` database., TestSettingsValidation
+
+### Community 89 - "QuakeWatch Architecture"
+Cohesion: 0.20
+Nodes (9): event_key(), Deterministic ArangoDB ``_key`` for the first-seen identity of a source event., 1. High-level design, 2. Module map and layering, 3. Data model (ArangoDB), 5. Transactions and concurrency, 6. Ingestion (L2), QuakeWatch Architecture (+1 more)
+
+### Community 90 - "BackfillInterrupted"
+Cohesion: 0.31
+Nodes (6): Command, Any, BaseCommand, BackfillInterrupted, Exception, A window failed transiently; the job is checkpointed and should be retried…
+
+### Community 91 - "ADR-003: Canonical event + immutable revisions, with identity claims"
+Cohesion: 0.22
+Nodes (8): ADR-003: Canonical event + immutable revisions, with identity claims, Atomicity and failure isolation, Canonical record, Consequences, Context, Decision, Identity claims (`event_identities`), Review history
+
+### Community 92 - "run_in_transaction"
+Cohesion: 0.29
+Nodes (8): _abort_quietly(), _is_retryable(), StandardDatabase, T, Run ``work`` atomically; retry on write-write conflicts.…, run_in_transaction(), BaseException, TransactionDatabase
+
+### Community 93 - "usgs.py"
+Cohesion: 0.32
+Nodes (6): Any, SourceRequest, CatalogCount, DetailResult, USGS Earthquake Hazards Program adapter (summary feeds, FDSN catalog, detail…, re
+
+### Community 94 - "context_processors.py"
+Cohesion: 0.33
+Nodes (5): Any, HttpRequest, site(), django_conf, django_http
+
+### Community 95 - ".__call__"
+Cohesion: 0.50
+Nodes (3): datetime, Request, Response
+
+### Community 96 - "Command"
+Cohesion: 0.50
+Nodes (3): Command, BaseCommand, CommandParser
+
 ## Knowledge Gaps
-- **306 isolated node(s):** `entrypoint.sh script`, `quakewatch`, `Prompt Defense Baseline`, `Your Role`, `Step 1: Contextual Discovery` (+301 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 441 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **15 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **316 isolated node(s):** `Why QuakeWatch?`, `Operator commands`, `Tests`, `Implementation Status`, `U.S. Geological Survey (USGS)` (+311 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 564 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **23 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `QuakeWatch Architecture` connect `run_in_transaction` to `middleware.py`?**
-  _High betweenness centrality (0.142) - this node is a cross-community bridge._
-- **Why does `4. Cross-cutting concerns` connect `middleware.py` to `query.py`, `run_in_transaction`, `AppSettings`?**
-  _High betweenness centrality (0.108) - this node is a cross-community bridge._
-- **Why does `QuakeWatch — Engineering System Design (ESD)` connect `QuakeWatch — Engineering System Design (ESD)` to `run_in_transaction`, `13. Reliability`, `6. Constraints and Indexes`, `15. Observability`, `20. Research Extensions`, `4. Source Integration`, `18. Deployment Profiles`, `3. Technology Stack`, `Document Collections`, `10. Frontend Design`, `16. Testing Strategy`?**
-  _High betweenness centrality (0.098) - this node is a cross-community bridge._
-- **Are the 2 inferred relationships involving `AppSettings` (e.g. with `4. Cross-cutting concerns` and `TestSettingsValidation`) actually correct?**
-  _`AppSettings` has 2 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `entrypoint.sh script`, `quakewatch`, `Prompt Defense Baseline` to the rest of the system?**
-  _306 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `QuakeWatch` be split into smaller, more focused modules?**
-  _Cohesion score 0.043478260869565216 - nodes in this community are weakly interconnected._
-- **Should `run_in_transaction` be split into smaller, more focused modules?**
-  _Cohesion score 0.07207207207207207 - nodes in this community are weakly interconnected._
+- **Why does `QuakeWatch Architecture` connect `QuakeWatch Architecture` to `ARCHITECTURE.md`, `CorrelationIdMiddleware`?**
+  _High betweenness centrality (0.170) - this node is a cross-community bridge._
+- **Why does `run_in_transaction()` connect `run_in_transaction` to `StandardDatabase`, `IngestionPipeline`, `services.py`, `errors.py`, `pipeline.py`, `._process_window`, `repository.py`, `QuakeWatch Architecture`?**
+  _High betweenness centrality (0.101) - this node is a cross-community bridge._
+- **Why does `5. Transactions and concurrency` connect `QuakeWatch Architecture` to `run_in_transaction`?**
+  _High betweenness centrality (0.086) - this node is a cross-community bridge._
+- **Are the 12 inferred relationships involving `CircuitBreaker` (e.g. with `ResilientHttpClient` and `breaker()`) actually correct?**
+  _`CircuitBreaker` has 12 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 11 inferred relationships involving `IngestionPipeline` (e.g. with `NormalizedRecord` and `RecordRejected`) actually correct?**
+  _`IngestionPipeline` has 11 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 9 inferred relationships involving `RunRepository` (e.g. with `BackfillService` and `EnrichmentService`) actually correct?**
+  _`RunRepository` has 9 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 12 inferred relationships involving `BackfillService` (e.g. with `Command` and `SourceRequest`) actually correct?**
+  _`BackfillService` has 12 INFERRED edges - model-reasoned connections that need verification._

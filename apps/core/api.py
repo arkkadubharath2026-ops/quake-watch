@@ -64,7 +64,7 @@ def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | Non
         code, message, details = "not_found", "Resource not found.", {}
     elif isinstance(exc, drf_exceptions.Throttled):
         code, message = "rate_limited", "Too many requests."
-        details = {"retry_after_seconds": exc.wait}
+        details = {"retry_after_seconds": getattr(exc, "wait", None)}  # set at runtime by DRF
     elif isinstance(exc, drf_exceptions.APIException):
         code, message, details = exc.default_code, str(exc.detail), {}
     else:  # pragma: no cover - drf only returns responses for APIException/Http404/PermissionDenied

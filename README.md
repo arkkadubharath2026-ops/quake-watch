@@ -51,6 +51,7 @@ docker compose up -d --build              # web on http://127.0.0.1:8000, health
 | `manage.py sync_feed [--feed all_day]` | one feed sync (same code path as the scheduled task) |
 | `manage.py backfill --start … --end … [--min-magnitude] [--window-days] [--enqueue] [--resume ID]` | bounded, checkpointed catalog import |
 | `manage.py enrich_event <event_key>` | fetch detail-feed product summaries for one event |
+| `manage.py aql_catalog [--write]` | EXPLAIN every named AQL query; regenerate docs/AQL_QUERIES.md |
 
 ### Tests
 ```bash
@@ -67,12 +68,12 @@ suite mocks the database.
 | L0 Harness | repo, Docker, Claude tooling (CLAUDE.md, agents, skills, hooks), Graphify | done |
 | L1 Foundations | typed config, logging, errors, metrics, ArangoDB schema/migrations/transactions, health | done |
 | L2 Ingestion | USGS adapters, normaliser, revision policy, identity claims, pipeline, backfill, enrichment, Celery jobs | done |
-| L3 Query & API | event search/map/detail/revisions, analytics, freshness, 15+ documented AQL queries | next |
-| L4 User features | accounts, alert rules + explainable matches, saved searches, research snapshots, audit log | planned |
+| L3 Query & API | event search/map/detail/revisions/provenance/graph, analytics, freshness, ops API, 36 catalogued AQL queries | done |
+| L4 User features | accounts, alert rules + explainable matches, saved searches, research snapshots, audit log | next |
 | L5 UI | Bootstrap design system, dashboard, map, explorer, detail, analytics, research, operations | planned |
 | L6 Hardening | benchmarks, E2E, CI, security review | planned |
 
-Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Decisions: [docs/adr/](docs/adr/) ·
+Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · AQL: [docs/AQL_QUERIES.md](docs/AQL_QUERIES.md) · Decisions: [docs/adr/](docs/adr/) ·
 Dependencies: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md)
 
 ## Primary Data Source

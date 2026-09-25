@@ -128,3 +128,38 @@ change), `unchanged`, `stale` (older `source_updated_at`), `rejected` (contract 
 `failed` (rolled back + dead-lettered). Representational coercions in the normaliser: epoch ms →
 UTC ISO string, `tsunami` 0/1 → bool, CSV `ids`/`sources`/`types` → sorted lists, alert level
 lower-cased. Nothing else is inferred; missing values stay `null`.
+
+## 7. Query & API layer (L3)
+
+All endpoints are under `/api/v1/`, return JSON, and share one error envelope
+`{"error": {code, message, details, correlation_id}}`. Event identifiers accept the canonical key
+(`usgs_<id>`) or **any** current or historical USGS id (resolved through identity claims).
+
+| Endpoint | Purpose | Notes |
+|---|---|---|
+| `GET events` | explorer search (FR-06) | filters below, `page`/`page_size` (≤ 200, offset ≤ 50k), `sort`, `direction`; returns `query.filters` (canonical) + `query.summary` |
+| `GET events/map` | viewport map (FR-07) | `bbox` required; ≤ 2000 points, otherwise server-side grid clusters |
+| `GET events/{id}` | detail (FR-08) | grouped `source` / `derived` (with method notes) / `operational` / `products` / `enrichment` |
+| `GET events/{id}/revisions` | revision timeline + initial-vs-current + policy | |
+| `GET events/{id}/provenance` | payload hashes, retained raw payload, ingestion runs + request manifests | |
+| `GET events/{id}/relationships` | graph: region, network, same-region events; spatial-temporal neighbours | neighbours are proximity only, not aftershock claims |
+| `POST events/{id}/enrich` | queue detail-feed enrichment | auth + CSRF, throttle `expensive` |
+| `GET analytics/{summary,timeseries,distributions,breakdowns,revisions,latency}` | FR-09 | `days` 1..3660; cached 60 s |
+| `GET system/health`, `system/freshness` | public status (ADR-004) | |
+| `GET operations/{overview,runs,dead-letters,diagnostics}` | FR-14 | staff only; diagnostics = live EXPLAIN of every named query |
+
+Explorer filters: `start`, `end`, `min_magnitude`, `max_magnitude`, `min_depth_km`, `max_depth_km`,
+`bbox` (south,west,north,east; antimeridian-aware) **or** `lat`+`lon`+`radius_km`, `alert`
+(green/yellow/orange/red/none), `tsunami`, `status`, `network`, `event_type`, `q` (ArangoSearch over
+place and derived region). `EventFilter.canonical()` is deterministic and is reused by saved searches
+and research snapshots.
+
+**Named-query catalogue.** Every static AQL query is a `NamedQuery` registered next to its repository
+and auto-discovered at startup. `manage.py aql_catalog --write` regenerates
+[AQL_QUERIES.md](AQL_QUERIES.md) from live EXPLAIN plans; tests assert each plan uses one of its
+expected indexes. Write queries are marked `read_only=False` and are only ever explained by tooling.
+
+**Performance (2.2k real events, local Docker):** all catalogued queries 1.4–26 ms; API responses
+5–140 ms (map clustering of the whole globe is the slowest). Ingestion: 8.6 ms per new record after
+consolidating each record's writes into one multi-collection AQL statement (was 31 ms with 11 round
+trips); unchanged-record replay ≈ 0.13 ms/record via the fast path.

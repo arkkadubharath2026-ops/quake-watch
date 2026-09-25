@@ -35,7 +35,7 @@ from apps.earthquakes.domain import SCHEMA_VERSION, CanonicalEventInput, is_impo
 from apps.geo.regions import region_from_place
 from apps.ingestion import revision_policy as policy
 from apps.ingestion.normalizer import NormalizedRecord, RecordRejected
-from apps.ingestion.repository import IngestionRepository, revision_key
+from apps.ingestion.repository import EventWrite, IngestionRepository, revision_key
 from config.env import get_settings
 from config.logging import get_logger
 
@@ -137,6 +137,33 @@ def _event_doc(
 
 def _source_state(doc: dict[str, Any]) -> dict[str, Any]:
     return {name: doc.get(name) for name in CanonicalEventInput.model_fields}
+
+
+def _revision(
+    event_key: str,
+    number: int,
+    kind: Literal["created", "updated"],
+    changes: Sequence[policy.FieldChange],
+    state: dict[str, Any],
+    record: NormalizedRecord,
+    observed_at: str,
+    run_id: str | None,
+) -> dict[str, Any]:
+    return {
+        "_key": revision_key(event_key, number),
+        "event_key": event_key,
+        "revision_number": number,
+        "kind": kind,
+        "observed_at": observed_at,
+        "source_updated_at": state["source_updated_at"],
+        "changed_fields": [c.field for c in changes],
+        "before": {c.field: c.before for c in changes},
+        "after": {c.field: c.after for c in changes},
+        "state": state,
+        "payload_hash": record.payload_hash,
+        "policy_version": policy.POLICY_VERSION,
+        "ingestion_run_id": run_id,
+    }
 
 
 def _pick_primary(candidates: list[dict[str, Any]], preferred_id: str) -> dict[str, Any]:
@@ -289,16 +316,17 @@ class IngestionPipeline:
         event = record.event
         new_state = event.to_state()
         candidates = repo.find_by_identity(event.source, event.associated_ids)
-
-        repo.store_raw_payload(
-            payload_hash=record.payload_hash,
-            source=event.source,
-            source_event_id=event.source_event_id,
-            payload=record.payload,
-            fetched_at=observed_at,
-            expires_at_epoch=int((utc_now() + self._raw_ttl).timestamp()),
-            run_id=self.run_id,
-        )
+        raw = {
+            "_key": record.payload_hash,
+            "source": event.source,
+            "source_event_id": event.source_event_id,
+            "payload": record.payload,
+            "first_fetched_at": observed_at,
+            "last_fetched_at": observed_at,
+            "expires_at": int((utc_now() + self._raw_ttl).timestamp()),
+            "ingestion_run_id": self.run_id,
+        }
+        region = region_from_place(event.place)
 
         if not candidates:
             doc = _event_doc(
@@ -312,27 +340,22 @@ class IngestionPipeline:
                 mode=self.mode,
                 previous_derived=None,
             )
-            repo.insert_event(doc)
-            repo.claim_new_identity(event.source, event.associated_ids, doc["_key"])
-            repo.append_revision(
-                {
-                    "_key": revision_key(doc["_key"], 1),
-                    "event_key": doc["_key"],
-                    "revision_number": 1,
-                    "kind": "created",
-                    "observed_at": observed_at,
-                    "source_updated_at": new_state["source_updated_at"],
-                    "changed_fields": [],
-                    "before": {},
-                    "after": {},
-                    "state": new_state,
-                    "payload_hash": record.payload_hash,
-                    "policy_version": policy.POLICY_VERSION,
-                    "ingestion_run_id": self.run_id,
-                }
+            repo.apply_write(
+                EventWrite(
+                    event=doc,
+                    is_new=True,
+                    source=event.source,
+                    claim_ids=event.associated_ids,
+                    raw=raw,
+                    revision=_revision(
+                        doc["_key"], 1, "created", [], new_state, record, observed_at, self.run_id
+                    ),
+                    region=region,
+                    relink_region=True,
+                    network=event.network,
+                    relink_network=True,
+                )
             )
-            repo.link_region(doc["_key"], region_from_place(event.place))
-            repo.link_network(doc["_key"], event.network)
             effects = self._notify(txn, EventChange("inserted", doc, (), self.mode, observed_at))
             return "inserted", 0, effects, doc["_key"]
 
@@ -343,10 +366,10 @@ class IngestionPipeline:
                 repo.absorb_merged(other["_key"], primary["_key"], observed_at)
                 merged += 1
                 log.info("event_merged", merged=other["_key"], into=primary["_key"])
-        # Identity knowledge is valid even when the payload itself is stale.
-        repo.claim_identity(event.source, event.associated_ids, primary["_key"])
 
         if from_iso(new_state["source_updated_at"]) < from_iso(primary["source_updated_at"]):
+            # Identity knowledge is valid even when the payload itself is stale.
+            repo.claim_identity(event.source, event.associated_ids, primary["_key"])
             repo.touch_seen([primary["_key"]], observed_at, self.run_id)
             return "stale", merged, 0, primary["_key"]
 
@@ -367,39 +390,37 @@ class IngestionPipeline:
         )
         if "enrichment" in primary:
             doc["enrichment"] = primary["enrichment"]
-
-        if not changes and not untracked:
-            # Same source content under a new payload hash (e.g. key order); keep canonical,
-            # remember the latest hash so the fast path applies next time.
-            repo.replace_event(doc)
-            return "unchanged", merged, 0, primary["_key"]
-
-        repo.replace_event(doc)
-        if not changes:
-            return "refreshed", merged, 0, primary["_key"]
-
-        repo.append_revision(
-            {
-                "_key": revision_key(primary["_key"], revision_count),
-                "event_key": primary["_key"],
-                "revision_number": revision_count,
-                "kind": "updated",
-                "observed_at": observed_at,
-                "source_updated_at": new_state["source_updated_at"],
-                "changed_fields": [c.field for c in changes],
-                "before": {c.field: c.before for c in changes},
-                "after": {c.field: c.after for c in changes},
-                "state": new_state,
-                "payload_hash": record.payload_hash,
-                "policy_version": policy.POLICY_VERSION,
-                "ingestion_run_id": self.run_id,
-            }
-        )
         changed = {c.field for c in changes}
-        if "place" in changed:
-            repo.link_region(primary["_key"], region_from_place(event.place))
-        if before_state.get("network") != event.network:
-            repo.link_network(primary["_key"], event.network)
+        repo.apply_write(
+            EventWrite(
+                event=doc,
+                is_new=False,
+                source=event.source,
+                claim_ids=event.associated_ids,
+                raw=raw,
+                revision=(
+                    _revision(
+                        primary["_key"],
+                        revision_count,
+                        "updated",
+                        changes,
+                        new_state,
+                        record,
+                        observed_at,
+                        self.run_id,
+                    )
+                    if changes
+                    else None
+                ),
+                region=region,
+                relink_region="place" in changed or bool(merged),
+                network=event.network,
+                relink_network=before_state.get("network") != event.network or bool(merged),
+            )
+        )
+        if not changes:
+            # untracked-only change → refreshed; identical content under a new hash → unchanged
+            return ("refreshed" if untracked else "unchanged"), merged, 0, primary["_key"]
         effects = self._notify(
             txn, EventChange("revised", doc, tuple(changes), self.mode, observed_at)
         )

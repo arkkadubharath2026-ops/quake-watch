@@ -25,7 +25,7 @@ Every dependency must solve a concrete problem. Versions are pinned to compatibl
 | freezegun | Deterministic time for cooldown / freshness tests |
 | playwright, pytest-playwright | Browser end-to-end tests |
 | ruff | Lint + format (also run by the Claude PostToolUse hook) |
-| mypy, django-stubs | Strict static typing |
+| mypy, django-stubs, djangorestframework-stubs | Strict static typing, including the DRF API boundary |
 | pip-audit | Dependency vulnerability scan (CI) |
 
 ## Frontend (vendored under `static/vendor`, no build step, no CDN at runtime)
