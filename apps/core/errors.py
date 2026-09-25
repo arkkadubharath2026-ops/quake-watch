@@ -84,3 +84,13 @@ class SourceSchemaError(QuakeWatchError):
 
     code = "source_schema_error"
     http_status = 502
+
+
+def pydantic_details(exc: Any) -> dict[str, Any]:
+    """Map a pydantic ValidationError to ``{"fields": {"a.b": "message"}}`` for the API envelope."""
+    fields: dict[str, str] = {}
+    for err in exc.errors(include_url=False):
+        loc = ".".join(str(part) for part in err["loc"]) or "__all__"
+        message = str(err["msg"]).removeprefix("Value error, ")
+        fields.setdefault(loc, message)
+    return {"fields": fields}

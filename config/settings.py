@@ -107,6 +107,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.ThrottledModelBackend"]
 LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "pages:dashboard"
 LOGOUT_REDIRECT_URL = "pages:dashboard"
@@ -185,6 +186,8 @@ REST_FRAMEWORK = {
         "admin_action": "30/hour",
     },
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
+    # JSON-only API: free the ``format`` query parameter for our own use (research exports).
+    "URL_FORMAT_OVERRIDE": None,
 }
 
 # --- Celery --------------------------------------------------------------------------------
@@ -209,7 +212,7 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 # Observers participating in the ingestion transaction (dotted paths; see apps.ingestion.observers)
-QUAKEWATCH_EVENT_OBSERVERS: list[str] = []
+QUAKEWATCH_EVENT_OBSERVERS: list[str] = ["apps.alerts.observer.AlertRuleObserver"]
 
 # --- Logging -------------------------------------------------------------------------------
 LOGGING = build_logging_config(level=APP.log_level, json_output=APP.log_json)

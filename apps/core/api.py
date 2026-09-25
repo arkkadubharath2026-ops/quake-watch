@@ -116,3 +116,20 @@ def paginated(items: list[Any], total: int, params: PageParams) -> dict[str, Any
         "total": total,
         "total_pages": total_pages,
     }
+
+
+@dataclass(frozen=True, slots=True)
+class AuthUser:
+    id: int
+    username: str
+    is_staff: bool
+
+
+def authenticated_user(request: Request) -> AuthUser:
+    """The request's user; views using it must enforce ``IsAuthenticated``."""
+    user: Any = request.user
+    if not getattr(user, "is_authenticated", False):
+        raise drf_exceptions.NotAuthenticated()
+    return AuthUser(
+        id=int(user.pk), username=str(user.get_username()), is_staff=bool(user.is_staff)
+    )

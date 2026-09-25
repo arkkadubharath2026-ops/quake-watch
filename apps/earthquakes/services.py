@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from apps.core.errors import NotFound, ValidationFailed
+from apps.core.clock import now_iso
+from apps.core.errors import Conflict, NotFound, ValidationFailed
 from apps.earthquakes.domain import KEY_PRODUCTS, SOURCE_STATE_FIELDS
 from apps.earthquakes.filters import EventFilter
 from apps.ingestion.revision_policy import POLICY_VERSION, TRACKED_FIELDS
@@ -203,3 +204,80 @@ class EventQueryService:
             "count": sum(c["count"] for c in clusters),
             "clusters": clusters,
         }
+
+
+class SavedSearchStore(Protocol):
+    def list_for_user(self, user_id: int) -> list[dict[str, Any]]: ...
+    def create(self, user_id: int, doc: dict[str, Any]) -> dict[str, Any] | None: ...
+    def get(self, user_id: int, search_id: str) -> dict[str, Any] | None: ...
+    def update(
+        self, user_id: int, search_id: str, fields: dict[str, Any]
+    ) -> dict[str, Any] | None: ...
+    def delete(self, user_id: int, search_id: str) -> bool: ...
+
+
+def _search_name(raw: Any) -> str:
+    name = " ".join(str(raw or "").split())
+    if not 1 <= len(name) <= 120:
+        raise ValidationFailed(
+            "Invalid saved search.", details={"fields": {"name": "1 to 120 characters required"}}
+        )
+    return name
+
+
+class SavedSearchService:
+    """Saved explorer queries (FR-12). Filters are stored in canonical form and re-validated."""
+
+    def __init__(self, store: SavedSearchStore, events: EventQueryService) -> None:
+        self.store = store
+        self.events = events
+
+    def list_for_user(self, user_id: int) -> list[dict[str, Any]]:
+        return self.store.list_for_user(user_id)
+
+    def create(self, user_id: int, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValidationFailed("Invalid saved search.", details={"fields": {"body": "object"}})
+        name = _search_name(payload.get("name"))
+        raw_filters = payload.get("filters") or {}
+        if not isinstance(raw_filters, dict):
+            raise ValidationFailed(
+                "Invalid saved search.", details={"fields": {"filters": "object"}}
+            )
+        f = EventFilter.from_params(raw_filters)
+        now = now_iso()
+        created = self.store.create(
+            user_id,
+            {
+                "name": name,
+                "filters": f.canonical(),
+                "summary": f.summary(),
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        if created is None:
+            raise Conflict("Saved search limit reached.")
+        return created
+
+    def get(self, user_id: int, search_id: str) -> dict[str, Any]:
+        found = self.store.get(user_id, search_id)
+        if found is None:
+            raise NotFound("Saved search not found.")
+        return found
+
+    def rename(self, user_id: int, search_id: str, payload: Any) -> dict[str, Any]:
+        name = _search_name(payload.get("name") if isinstance(payload, dict) else None)
+        updated = self.store.update(user_id, search_id, {"name": name, "updated_at": now_iso()})
+        if updated is None:
+            raise NotFound("Saved search not found.")
+        return updated
+
+    def delete(self, user_id: int, search_id: str) -> None:
+        if not self.store.delete(user_id, search_id):
+            raise NotFound("Saved search not found.")
+
+    def run(self, user_id: int, search_id: str, *, offset: int, limit: int) -> dict[str, Any]:
+        saved = self.get(user_id, search_id)
+        f = EventFilter.from_params(saved["filters"])
+        return {"saved_search": saved, **self.events.search(f, offset=offset, limit=limit)}

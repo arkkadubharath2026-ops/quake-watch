@@ -9,7 +9,7 @@ from arango.database import Database
 from apps.core.arango import catalog
 from apps.core.arango import schema as s
 from apps.core.arango.catalog import NamedQuery
-from apps.core.arango.client import sync
+from apps.core.arango.client import sync, sync_optional
 from apps.core.arango.query import run_query
 
 LATEST_RUN = catalog.register(
@@ -140,3 +140,67 @@ class OperationsRepository:
             for spec in s.COLLECTIONS
             if spec.name != s.SCHEMA_META
         }
+
+
+AUDIT_RECENT = catalog.register(
+    NamedQuery(
+        name="ops_audit_recent",
+        category="operations",
+        question="Audit trail of privileged actions, newest first (FR-15).",
+        aql="""
+        FOR a IN audit_log
+          FILTER @action == null OR a.action == @action
+          SORT a.at DESC
+          LIMIT @offset, @limit
+          RETURN UNSET(a, "_id", "_rev")
+        """,
+        sample_binds=lambda: {"action": None, "offset": 0, "limit": 25},
+        expected_indexes=("qw_audit_at",),
+        features=("sort", "pagination"),
+    )
+)
+
+BACKFILL_JOBS = catalog.register(
+    NamedQuery(
+        name="ops_backfill_jobs",
+        category="operations",
+        question="Backfill jobs with checkpoint progress.",
+        aql="""
+        FOR j IN backfill_jobs
+          SORT j.created_at DESC
+          LIMIT @limit
+          RETURN UNSET(j, "_id", "_rev")
+        """,
+        sample_binds=lambda: {"limit": 25},
+        features=("sort",),
+    )
+)
+
+
+class AuditRepository:
+    """Append-only audit trail. There is intentionally no update or delete method."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    def append(self, entry: dict[str, Any]) -> None:
+        sync(self.db.collection(s.AUDIT_LOG).insert(entry, silent=True))
+
+    def recent(
+        self, *, action: str | None, offset: int, limit: int
+    ) -> tuple[list[dict[str, Any]], int]:
+        result = run_query(
+            self.db,
+            AUDIT_RECENT.name,
+            AUDIT_RECENT.aql,
+            {"action": action, "offset": offset, "limit": limit},
+            full_count=True,
+        )
+        return result.rows, int(result.full_count or 0)
+
+    def backfill_jobs(self, *, limit: int = 25) -> list[dict[str, Any]]:
+        return run_query(self.db, BACKFILL_JOBS.name, BACKFILL_JOBS.aql, {"limit": limit}).rows
+
+    def dead_letter(self, key: str) -> dict[str, Any] | None:
+        doc = sync_optional(self.db.collection(s.DEAD_LETTERS).get(key))
+        return doc if isinstance(doc, dict) else None

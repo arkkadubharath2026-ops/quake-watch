@@ -69,8 +69,8 @@ suite mocks the database.
 | L1 Foundations | typed config, logging, errors, metrics, ArangoDB schema/migrations/transactions, health | done |
 | L2 Ingestion | USGS adapters, normaliser, revision policy, identity claims, pipeline, backfill, enrichment, Celery jobs | done |
 | L3 Query & API | event search/map/detail/revisions/provenance/graph, analytics, freshness, ops API, 36 catalogued AQL queries | done |
-| L4 User features | accounts, alert rules + explainable matches, saved searches, research snapshots, audit log | next |
-| L5 UI | Bootstrap design system, dashboard, map, explorer, detail, analytics, research, operations | planned |
+| L4 User features | explainable alert rules + in-transaction matching, saved searches, reproducible research snapshots, admin actions, audit trail, login throttling | done |
+| L5 UI | Bootstrap design system, dashboard, map, explorer, detail, analytics, research, operations | next |
 | L6 Hardening | benchmarks, E2E, CI, security review | planned |
 
 Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · AQL: [docs/AQL_QUERIES.md](docs/AQL_QUERIES.md) · Decisions: [docs/adr/](docs/adr/) ·

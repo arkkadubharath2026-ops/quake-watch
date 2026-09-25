@@ -1,0 +1,70 @@
+"""Audit trail recording (FR-15): who did what, to what, when, from where, with what outcome."""
+
+from __future__ import annotations
+
+import uuid
+from typing import Any
+
+import structlog
+from django.conf import settings
+
+from apps.core.arango.client import get_db
+from apps.core.clock import now_iso
+from apps.operations.repository import AuditRepository
+from config.logging import get_logger
+
+log = get_logger(__name__)
+
+ACTIONS = (
+    "ingestion.sync_triggered",
+    "ingestion.backfill_created",
+    "ingestion.dead_letter_retried",
+    "auth.login_succeeded",
+    "auth.login_failed",
+    "auth.login_locked",
+    "auth.signup",
+)
+
+
+def record(
+    action: str,
+    *,
+    actor_id: int | None,
+    actor_username: str | None,
+    target: str | None = None,
+    details: dict[str, Any] | None = None,
+    outcome: str = "ok",
+    ip: str | None = None,
+    user_agent: str | None = None,
+) -> str:
+    if action not in ACTIONS:
+        raise ValueError(f"unknown audit action {action!r}")
+    entry_id = uuid.uuid4().hex
+    correlation_id = structlog.contextvars.get_contextvars().get("correlation_id")
+    AuditRepository(get_db()).append(
+        {
+            "_key": entry_id,
+            "at": now_iso(),
+            "action": action,
+            "actor_id": actor_id,
+            "actor_username": actor_username,
+            "target": target,
+            "details": details or {},
+            "outcome": outcome,
+            "ip": ip,
+            "user_agent": (user_agent or "")[:200] or None,
+            "correlation_id": correlation_id,
+        }
+    )
+    log.info("audit", action=action, actor=actor_username, target=target, outcome=outcome)
+    return entry_id
+
+
+def client_ip(meta: dict[str, Any]) -> str | None:
+    """Direct peer address. X-Forwarded-For is only trusted behind the configured proxy, where
+    SECURE_PROXY_SSL_HEADER is set; the first hop is then the client."""
+    forwarded = meta.get("HTTP_X_FORWARDED_FOR")
+    if forwarded and getattr(settings, "SECURE_PROXY_SSL_HEADER", None):
+        return str(forwarded).split(",")[0].strip()[:64]
+    remote = meta.get("REMOTE_ADDR")
+    return str(remote)[:64] if remote else None

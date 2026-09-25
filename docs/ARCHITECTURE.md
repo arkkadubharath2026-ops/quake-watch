@@ -163,3 +163,28 @@ expected indexes. Write queries are marked `read_only=False` and are only ever e
 5–140 ms (map clustering of the whole globe is the slowest). Ingestion: 8.6 ms per new record after
 consolidating each record's writes into one multi-collection AQL statement (was 31 ms with 11 round
 trips); unchanged-record replay ≈ 0.13 ms/record via the fast path.
+
+## 8. User features (L4)
+
+| Feature | Endpoints (`/api/v1/`) | Storage / graph | Decision |
+|---|---|---|---|
+| Alert rules (FR-10) | `alert-rules` (GET, POST), `alert-rules/{id}` (GET, PATCH, DELETE), `alert-rules/{id}/preview` | `alert_rules`, `users -user_owns_rule-> alert_rules` | ADR-005 |
+| Explainable matches (FR-11) | `alerts/matches`, `alerts/matches/read`, `alerts/unread-count`, `alerts/matched-events` | `alert_matches`, `alert_rules -rule_matched_event-> events` | ADR-005 |
+| Saved searches (FR-12) | `saved-searches` (GET, POST), `saved-searches/{id}` (GET, PATCH, DELETE), `saved-searches/{id}/events` | `saved_searches` (canonical `EventFilter`) | — |
+| Research snapshots (FR-13) | `research/snapshots` (GET, POST), `research/snapshots/{id}` (GET, DELETE), `research/snapshots/{id}/export?format=zip\|csv\|json` | `research_snapshots` (pinned `[event_key, revision]`) | ADR-006 |
+| Admin actions (FR-14) | `operations/sync`, `operations/backfill` (GET, POST), `operations/dead-letters/{key}/retry` | Celery tasks, `backfill_jobs`, `dead_letters` | — |
+| Audit trail (FR-15) | `operations/audit` (GET only) | `audit_log` (append-only; no update/delete code path) | — |
+
+**Authorization.** All user-owned data is filtered by `user_id` inside the repository queries
+(object-level authorization in the data layer, not only in views); another user's object answers
+404, never 403, so existence is not leaked. Operations endpoints require `is_staff`; state-changing
+admin actions are throttled (`admin_action`) and audited with actor, target, IP, user agent and the
+request's correlation id.
+
+**Authentication hardening.** `ThrottledModelBackend` refuses attempts once a (username, client IP)
+pair reaches 10 failures in 15 minutes (30 per username across addresses); every login outcome is
+audited through Django's auth signals. Session auth enforces CSRF for all unsafe API methods.
+
+**Alert delivery.** Matches are evaluated inside the ingestion transaction by the
+`AlertRuleObserver`; live-feed only, events < 24 h old, created after the rule, one match per
+(rule, event), cooldown-suppressed repeats recorded with `notify: false`.

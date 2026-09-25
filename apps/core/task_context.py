@@ -18,6 +18,10 @@ from apps.core.middleware import new_correlation_id
 # under a distinct header name.
 HEADER = "qw_correlation_id"
 
+# Context of the code that was running before each task started. With eager execution (tests,
+# local dev) tasks run inline inside a request, whose log context must survive the task.
+_saved_contexts: dict[str, dict[str, Any]] = {}
+
 
 @before_task_publish.connect
 def _propagate_correlation_id(headers: dict[str, Any] | None = None, **_: Any) -> None:
@@ -29,6 +33,8 @@ def _propagate_correlation_id(headers: dict[str, Any] | None = None, **_: Any) -
 @task_prerun.connect
 def _bind_task_context(task_id: str | None = None, task: Any = None, **_: Any) -> None:
     inbound = getattr(getattr(task, "request", None), HEADER, None)
+    if task_id is not None:
+        _saved_contexts[task_id] = structlog.contextvars.get_contextvars()
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
         correlation_id=inbound or new_correlation_id(),
@@ -38,5 +44,8 @@ def _bind_task_context(task_id: str | None = None, task: Any = None, **_: Any) -
 
 
 @task_postrun.connect
-def _clear_task_context(**_: Any) -> None:
+def _clear_task_context(task_id: str | None = None, **_: Any) -> None:
     structlog.contextvars.clear_contextvars()
+    previous = _saved_contexts.pop(task_id, None) if task_id is not None else None
+    if previous:
+        structlog.contextvars.bind_contextvars(**previous)

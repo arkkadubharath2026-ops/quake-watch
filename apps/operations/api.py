@@ -14,18 +14,25 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.core import metrics
-from apps.core.api import page_params, paginated
+from apps.core.api import authenticated_user, page_params, paginated
 from apps.core.arango import catalog
 from apps.core.arango.client import get_db, ping
 from apps.core.arango.query import explain, indexes_used
 from apps.core.clock import to_iso, utc_now
 from apps.core.errors import ValidationFailed
-from apps.ingestion.adapters.usgs import usgs_breaker
+from apps.ingestion.adapters.usgs import build_usgs_client, usgs_breaker
+from apps.ingestion.tasks import run_backfill, sync_feed
+from apps.operations import actions, audit
 from apps.operations.freshness import FreshnessService
-from apps.operations.repository import OperationsRepository
+from apps.operations.repository import AuditRepository, OperationsRepository
 from config.env import get_settings
 
 RUN_KINDS = ("feed_sync", "backfill_window", "detail_enrichment")
+VALID_FEEDS = frozenset(
+    f"{level}_{period}"
+    for level in ("significant", "4.5", "2.5", "1.0", "all")
+    for period in ("hour", "day", "week", "month")
+)
 RUN_STATUSES = ("running", "succeeded", "partial", "failed", "skipped", "split", "abandoned")
 
 
@@ -152,3 +159,79 @@ class DiagnosticsView(APIView):
         body = {"generated_at": to_iso(utc_now()), "queries": results}
         cache.set("ops:diagnostics", body, 300)
         return Response(body)
+
+
+class _AdminAction(APIView):
+    permission_classes = (IsAdminUser,)
+    throttle_classes = (ScopedRateThrottle,)
+    throttle_scope = "admin_action"
+
+    @staticmethod
+    def _audit(request: Request, action: str, target: str | None, details: dict[str, Any]) -> None:
+        user = authenticated_user(request)
+        audit.record(
+            action,
+            actor_id=user.id,
+            actor_username=user.username,
+            target=target,
+            details=details,
+            ip=audit.client_ip(request.META),
+            user_agent=request.META.get("HTTP_USER_AGENT"),
+        )
+
+
+class TriggerSyncView(_AdminAction):
+    def post(self, request: Request) -> Response:
+        data = request.data if isinstance(request.data, dict) else {}
+        feed = data.get("feed") or get_settings().sync_feed
+        if not isinstance(feed, str) or feed not in VALID_FEEDS:
+            raise ValidationFailed(
+                "Invalid feed.", details={"fields": {"feed": sorted(VALID_FEEDS)}}
+            )
+        task = sync_feed.delay(feed)
+        self._audit(request, "ingestion.sync_triggered", feed, {"task_id": task.id})
+        return Response({"status": "queued", "feed": feed, "task_id": task.id}, status=202)
+
+
+class BackfillView(_AdminAction):
+    def get(self, request: Request) -> Response:
+        return Response({"results": AuditRepository(get_db()).backfill_jobs()})
+
+    def post(self, request: Request) -> Response:
+        client = build_usgs_client()
+        try:
+            job_id = actions.create_backfill(
+                get_db(), client, request.data, requested_by=authenticated_user(request).username
+            )
+        finally:
+            client.close()
+        task = run_backfill.delay(job_id)
+        self._audit(
+            request,
+            "ingestion.backfill_created",
+            job_id,
+            {"request": dict(request.data), "task_id": task.id},
+        )
+        return Response({"status": "queued", "job_id": job_id, "task_id": task.id}, status=202)
+
+
+class RetryDeadLetterView(_AdminAction):
+    def post(self, request: Request, key: str) -> Response:
+        result = actions.retry_dead_letter(get_db(), key)
+        self._audit(request, "ingestion.dead_letter_retried", key, {"outcome": result["outcome"]})
+        return Response(result)
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def audit_log(request: Request) -> Response:
+    params = page_params(request)
+    action = request.query_params.get("action") or None
+    if action is not None and action not in audit.ACTIONS:
+        raise ValidationFailed(
+            "Invalid action.", details={"fields": {"action": list(audit.ACTIONS)}}
+        )
+    rows, total = AuditRepository(get_db()).recent(
+        action=action, offset=params.offset, limit=params.page_size
+    )
+    return Response(paginated(rows, total, params))

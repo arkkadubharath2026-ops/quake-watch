@@ -23,6 +23,9 @@ resolution as an ADR in `docs/adr/`.
 7. **End every work report with a status bar** showing per-layer progress, e.g.
    `L1 Foundations ██████████ 100%`.
 8. Store new important standing instructions from the owner in this file.
+9. **Compact after every major task.** Claude cannot run `/compact` itself, so after each completed,
+   committed milestone end with a self-contained hand-off summary (done / repo state / next step)
+   plus the reminder "Run /compact now", and keep intermediate narration lean.
 
 ## Architecture (see docs/ARCHITECTURE.md)
 

@@ -9,11 +9,11 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from apps.core.api import page_params, paginated
+from apps.core.api import authenticated_user, page_params, paginated
 from apps.core.arango.client import get_db
 from apps.earthquakes.filters import EventFilter
-from apps.earthquakes.repository import EventRepository
-from apps.earthquakes.services import EventQueryService
+from apps.earthquakes.repository import EventRepository, SavedSearchRepository
+from apps.earthquakes.services import EventQueryService, SavedSearchService
 from apps.ingestion.tasks import enrich_event
 
 
@@ -67,3 +67,49 @@ class EventEnrichView(APIView):
         doc = _service().get(identifier)
         task = enrich_event.delay(doc["_key"], force=True)
         return Response({"key": doc["_key"], "status": "queued", "task_id": task.id}, status=202)
+
+
+def _saved() -> SavedSearchService:
+    db = get_db()
+    return SavedSearchService(SavedSearchRepository(db), EventQueryService(EventRepository(db)))
+
+
+def _uid(request: Request) -> int:
+    return authenticated_user(request).id
+
+
+class SavedSearchListView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request: Request) -> Response:
+        return Response({"results": _saved().list_for_user(_uid(request))})
+
+    def post(self, request: Request) -> Response:
+        return Response(_saved().create(_uid(request), request.data), status=201)
+
+
+class SavedSearchDetailView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request: Request, search_id: str) -> Response:
+        return Response(_saved().get(_uid(request), search_id))
+
+    def patch(self, request: Request, search_id: str) -> Response:
+        return Response(_saved().rename(_uid(request), search_id, request.data))
+
+    def delete(self, request: Request, search_id: str) -> Response:
+        _saved().delete(_uid(request), search_id)
+        return Response(status=204)
+
+
+class SavedSearchRunView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request: Request, search_id: str) -> Response:
+        params = page_params(request)
+        result = _saved().run(
+            _uid(request), search_id, offset=params.offset, limit=params.page_size
+        )
+        body = paginated(result["rows"], result["total"], params)
+        body.update(query=result["query"], saved_search=result["saved_search"])
+        return Response(body)

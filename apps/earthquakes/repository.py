@@ -418,3 +418,88 @@ class EventRepository:
         )
         rows = run_query(self.db, "events_map_clusters", aql, {**compiled.binds, "cell": cell}).rows
         return rows, round(cell, 4)
+
+
+SAVED_BY_USER = catalog.register(
+    NamedQuery(
+        name="saved_searches_by_user",
+        category="saved searches",
+        question="A user's saved explorer searches, newest first.",
+        aql="""
+        FOR s IN saved_searches
+          FILTER s.user_id == @user_id
+          SORT s.user_id DESC, s.created_at DESC
+          RETURN MERGE(UNSET(s, "_id", "_rev", "_key"), {id: s._key})
+        """,
+        sample_binds=lambda: {"user_id": 1},
+        expected_indexes=("qw_saved_user",),
+        features=("composite index",),
+    )
+)
+
+MAX_SAVED_SEARCHES = 50
+
+
+class SavedSearchRepository:
+    """User-owned saved searches (FR-12). Every query is scoped by ``user_id``."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    def list_for_user(self, user_id: int) -> list[dict[str, Any]]:
+        return run_query(self.db, SAVED_BY_USER.name, SAVED_BY_USER.aql, {"user_id": user_id}).rows
+
+    def create(self, user_id: int, doc: dict[str, Any]) -> dict[str, Any] | None:
+        rows = run_query(
+            self.db,
+            "saved_searches_create",
+            """
+            LET existing = LENGTH(FOR s IN saved_searches FILTER s.user_id == @uid RETURN 1)
+            FILTER existing < @max
+            INSERT MERGE(@doc, {user_id: @uid}) INTO saved_searches
+            RETURN MERGE(UNSET(NEW, "_id", "_rev", "_key"), {id: NEW._key})
+            """,
+            {"uid": user_id, "doc": doc, "max": MAX_SAVED_SEARCHES},
+        ).rows
+        return rows[0] if rows else None
+
+    def get(self, user_id: int, search_id: str) -> dict[str, Any] | None:
+        rows = run_query(
+            self.db,
+            "saved_searches_get",
+            """
+            LET s = DOCUMENT("saved_searches", @id)
+            FILTER s != null AND s.user_id == @uid
+            RETURN MERGE(UNSET(s, "_id", "_rev", "_key"), {id: s._key})
+            """,
+            {"id": search_id, "uid": user_id},
+        ).rows
+        return rows[0] if rows else None
+
+    def update(self, user_id: int, search_id: str, fields: dict[str, Any]) -> dict[str, Any] | None:
+        rows = run_query(
+            self.db,
+            "saved_searches_update",
+            """
+            LET s = DOCUMENT("saved_searches", @id)
+            FILTER s != null AND s.user_id == @uid
+            UPDATE s WITH @fields IN saved_searches OPTIONS {mergeObjects: false}
+            RETURN MERGE(UNSET(NEW, "_id", "_rev", "_key"), {id: NEW._key})
+            """,
+            {"id": search_id, "uid": user_id, "fields": fields},
+        ).rows
+        return rows[0] if rows else None
+
+    def delete(self, user_id: int, search_id: str) -> bool:
+        rows = run_query(
+            self.db,
+            "saved_searches_delete",
+            """
+            LET s = DOCUMENT("saved_searches", @id)
+            FILTER s != null AND s.user_id == @uid
+            REMOVE s IN saved_searches
+            RETURN 1
+            """,
+            {"id": search_id, "uid": user_id},
+        ).rows
+        return bool(rows)

@@ -94,11 +94,39 @@ class AppSettings(BaseSettings):
         return self
 
     @property
+    def resolved_app_version(self) -> str:
+        """Explicit QW_APP_VERSION (container builds) or the checkout's git SHA."""
+        if self.app_version != "dev":
+            return self.app_version
+        sha = detect_git_sha()
+        return f"git-{sha}" if sha else "dev"
+
+    @property
     def arango_database_name(self) -> str:
         """Tests always run against an isolated ``<db>_test`` database."""
         if self.env is Environment.TEST and not self.arango_db.endswith("_test"):
             return f"{self.arango_db}_test"
         return self.arango_db
+
+
+def detect_git_sha(root: Path = BASE_DIR) -> str | None:
+    """Short commit SHA from ``.git`` files (no subprocess); None outside a git checkout."""
+    head = root / ".git" / "HEAD"
+    try:
+        content = head.read_text(encoding="utf-8").strip()
+        if content.startswith("ref: "):
+            ref = content.removeprefix("ref: ")
+            ref_file = root / ".git" / ref
+            if ref_file.exists():
+                return ref_file.read_text(encoding="utf-8").strip()[:12]
+            packed = root / ".git" / "packed-refs"
+            for line in packed.read_text(encoding="utf-8").splitlines():
+                if line.endswith(" " + ref):
+                    return line.split(" ", 1)[0][:12]
+            return None
+        return content[:12]
+    except OSError:
+        return None
 
 
 @lru_cache(maxsize=1)

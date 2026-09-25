@@ -80,6 +80,24 @@ ABANDON_STALE_RUNS = catalog.register(
 )
 
 
+ACTIVE_BACKFILL_JOBS = catalog.register(
+    NamedQuery(
+        name="backfill_active_jobs",
+        category="maintenance",
+        question="Backfill jobs still pending or running (recovery task resumes them).",
+        aql="""
+        FOR j IN backfill_jobs
+          FILTER j.status IN ["pending", "running"]
+          SORT j.created_at
+          RETURN j
+        """,
+        sample_binds=lambda: {},
+        expected_indexes=("qw_backfill_status",),
+        features=("persistent index", "recovery"),
+    )
+)
+
+
 @dataclass(frozen=True, slots=True)
 class EventWrite:
     """Everything one ingested record writes (see :meth:`IngestionRepository.apply_write`)."""
@@ -451,13 +469,4 @@ class RunRepository:
         sync(self.db.collection(s.BACKFILL_JOBS).update({"_key": job_id, **fields}, silent=True))
 
     def active_backfill_jobs(self) -> list[dict[str, Any]]:
-        return run_query(
-            self.db,
-            "backfill_active_jobs",
-            """
-            FOR j IN backfill_jobs
-              FILTER j.status IN ["pending", "running"]
-              SORT j.created_at
-              RETURN j
-            """,
-        ).rows
+        return run_query(self.db, ACTIVE_BACKFILL_JOBS.name, ACTIVE_BACKFILL_JOBS.aql, {}).rows

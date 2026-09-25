@@ -8,6 +8,6 @@ from django.http import HttpRequest
 
 def site(request: HttpRequest) -> dict[str, Any]:
     return {
-        "APP_VERSION": settings.QUAKEWATCH.app_version,
+        "APP_VERSION": settings.QUAKEWATCH.resolved_app_version,
         "DATA_ATTRIBUTION": "Earthquake data courtesy of the U.S. Geological Survey (USGS).",
     }

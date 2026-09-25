@@ -29,4 +29,15 @@ Every dependency must solve a concrete problem. Versions are pinned to compatibl
 | pip-audit | Dependency vulnerability scan (CI) |
 
 ## Frontend (vendored under `static/vendor`, no build step, no CDN at runtime)
-Recorded when added in the UI layer.
+Pinned and hash-locked in `static/vendor/VENDOR_LOCK.json` by `scripts/vendor_assets.py`.
+
+| Library | Version | Problem it solves | Alternatives rejected |
+|---|---|---|---|
+| Bootstrap | 5.3.8 | Accessible component primitives (modals, toasts, tabs, forms, tables), grid, native dark mode | Tailwind (needs a build step), component frameworks (no SPA needed) |
+| Bootstrap Icons | 1.13.1 | Icon set matching Bootstrap (woff2 only) | Font Awesome (heavier) |
+| Leaflet | 1.9.4 | Interactive map (ESD stack) | Mapbox GL (token, WebGL weight) |
+| Leaflet.markercluster | 1.5.3 | Client-side marker clustering (FR-07) complementing server-side grid clusters | custom clustering |
+| Chart.js | 4.5.1 | Charts (ESD stack): time series, histograms, scatter | D3 (lower-level, more code) |
+
+Deliberately not added: jQuery, DataTables (server-side pagination + plain accessible tables
+suffice), date-picker libraries (native `<input type="date">`).

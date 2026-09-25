@@ -1,0 +1,12 @@
+{
+  "bootstrap-icons@1.13.1/font/bootstrap-icons.min.css": "a5d6387a32ca3baec4d02336b5b3edab50c9dd518355576a011ea3dd9c1d884e",
+  "bootstrap-icons@1.13.1/font/fonts/bootstrap-icons.woff2": "6c75710364a1ca5604267716f6d28997b26319fdb078cf11e0b42ab66ff2ea61",
+  "bootstrap@5.3.8/dist/css/bootstrap.min.css": "d85327d99c7a3ee1f9b5d0500d1370acea3ad2db39c163c2f51f232baedbdede",
+  "bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js": "e4fd49181388c48ec5040bd3fe66f57c29c8e67fcd8502b3354b96ec7ab47cc7",
+  "chart.js@4.5.1/dist/chart.umd.min.js": "48444a82d4edcb5bec0f1965faacdde18d9c17db3063d042abada2f705c9f54a",
+  "leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css": "61258232d98d64dc2a7b1e02130d67421bc5b9bda5994eef70228ff97570c170",
+  "leaflet.markercluster@1.5.3/dist/MarkerCluster.css": "614dea0a98ff3f4ead74f04918f6b1d1b9ba435c25b5fc23b21a394d1e3e4d87",
+  "leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js": "1e4e1d22972a3926f48598e0caf14e3fe7049835d428a344fed4f9e3665b3508",
+  "leaflet@1.9.4/dist/leaflet.css": "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
+  "leaflet@1.9.4/dist/leaflet.js": "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
+}
