@@ -3,3 +3,4 @@
 *.ico binary
 *.woff2 binary
 graphify-out/graph.json merge=graphify
+static/vendor/** -text
