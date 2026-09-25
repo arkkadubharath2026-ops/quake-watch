@@ -37,6 +37,8 @@ class AppSettings(BaseSettings):
     allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["localhost"])
     csrf_trusted_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     app_version: str = "dev"
+    # Reverse proxies in front of the app that append to X-Forwarded-For (0 = direct exposure).
+    num_proxies: int = Field(default=0, ge=0, le=5)
 
     arango_url: str = "http://127.0.0.1:8529"
     arango_db: str = "quakewatch"

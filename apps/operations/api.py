@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import timedelta
-from typing import Any
+from typing import Any, NoReturn
 
 from django.core.cache import cache
 from rest_framework.decorators import api_view, permission_classes
@@ -21,6 +22,7 @@ from apps.core.arango.query import explain, indexes_used
 from apps.core.clock import to_iso, utc_now
 from apps.core.errors import ValidationFailed
 from apps.ingestion.adapters.usgs import build_usgs_client, usgs_breaker
+from apps.ingestion.services import BackfillService
 from apps.ingestion.tasks import run_backfill, sync_feed
 from apps.operations import actions, audit
 from apps.operations.freshness import FreshnessService
@@ -162,25 +164,52 @@ class DiagnosticsView(APIView):
 
 
 class _AdminAction(APIView):
+    """Staff-only, throttled, audited. Each action writes a ``requested`` entry *before* acting
+    and an ``ok`` / ``failed`` entry after, so no privileged action can happen unaudited; staff
+    permission denials are audited too."""
+
     permission_classes = (IsAdminUser,)
     throttle_classes = (ScopedRateThrottle,)
     throttle_scope = "admin_action"
+    action = ""
 
-    @staticmethod
-    def _audit(request: Request, action: str, target: str | None, details: dict[str, Any]) -> None:
-        user = authenticated_user(request)
+    def _audit(
+        self, request: Request, target: str | None, details: dict[str, Any], outcome: str
+    ) -> None:
+        user: Any = request.user
+        authenticated = bool(getattr(user, "is_authenticated", False))
         audit.record(
-            action,
-            actor_id=user.id,
-            actor_username=user.username,
-            target=target,
+            self.action if outcome != "denied" else "operations.permission_denied",
+            actor_id=int(user.pk) if authenticated else None,
+            actor_username=str(user.get_username()) if authenticated else None,
+            target=target if outcome != "denied" else request.path,
             details=details,
+            outcome=outcome,
             ip=audit.client_ip(request.META),
             user_agent=request.META.get("HTTP_USER_AGENT"),
         )
 
+    def permission_denied(
+        self, request: Request, message: str | None = None, code: str | None = None
+    ) -> NoReturn:
+        self._audit(request, None, {"method": request.method}, "denied")
+        super().permission_denied(request, message=message, code=code)
+
+    def _perform[T](
+        self, request: Request, target: str | None, details: dict[str, Any], work: Callable[[], T]
+    ) -> T:
+        self._audit(request, target, details, "requested")
+        try:
+            result = work()
+        except Exception as exc:
+            self._audit(request, target, {**details, "error": type(exc).__name__}, "failed")
+            raise
+        return result
+
 
 class TriggerSyncView(_AdminAction):
+    action = "ingestion.sync_triggered"
+
     def post(self, request: Request) -> Response:
         data = request.data if isinstance(request.data, dict) else {}
         feed = data.get("feed") or get_settings().sync_feed
@@ -188,37 +217,42 @@ class TriggerSyncView(_AdminAction):
             raise ValidationFailed(
                 "Invalid feed.", details={"fields": {"feed": sorted(VALID_FEEDS)}}
             )
-        task = sync_feed.delay(feed)
-        self._audit(request, "ingestion.sync_triggered", feed, {"task_id": task.id})
+        task = self._perform(request, feed, {}, lambda: sync_feed.delay(feed))
+        self._audit(request, feed, {"task_id": task.id}, "ok")
         return Response({"status": "queued", "feed": feed, "task_id": task.id}, status=202)
 
 
 class BackfillView(_AdminAction):
+    action = "ingestion.backfill_created"
+
     def get(self, request: Request) -> Response:
         return Response({"results": AuditRepository(get_db()).backfill_jobs()})
 
     def post(self, request: Request) -> Response:
-        client = build_usgs_client()
-        try:
-            job_id = actions.create_backfill(
-                get_db(), client, request.data, requested_by=authenticated_user(request).username
-            )
-        finally:
-            client.close()
-        task = run_backfill.delay(job_id)
-        self._audit(
-            request,
-            "ingestion.backfill_created",
-            job_id,
-            {"request": dict(request.data), "task_id": task.id},
+        backfill = actions.parse_backfill(
+            request.data, requested_by=authenticated_user(request).username
         )
+        summary = actions.describe_backfill(backfill)  # validated fields only
+
+        def create() -> str:
+            client = build_usgs_client()
+            try:
+                return BackfillService(get_db(), client).create_job(backfill)
+            finally:
+                client.close()
+
+        job_id = self._perform(request, None, summary, create)
+        task = run_backfill.delay(job_id)
+        self._audit(request, job_id, {**summary, "task_id": task.id}, "ok")
         return Response({"status": "queued", "job_id": job_id, "task_id": task.id}, status=202)
 
 
 class RetryDeadLetterView(_AdminAction):
+    action = "ingestion.dead_letter_retried"
+
     def post(self, request: Request, key: str) -> Response:
-        result = actions.retry_dead_letter(get_db(), key)
-        self._audit(request, "ingestion.dead_letter_retried", key, {"outcome": result["outcome"]})
+        result = self._perform(request, key, {}, lambda: actions.retry_dead_letter(get_db(), key))
+        self._audit(request, key, {"result": result["outcome"]}, "ok")
         return Response(result)
 
 

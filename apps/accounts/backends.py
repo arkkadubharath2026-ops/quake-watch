@@ -20,9 +20,11 @@ class ThrottledModelBackend(ModelBackend):
         password: str | None = None,
         **kwargs: Any,
     ) -> Any:
-        if username and security.is_locked(username, _ip(request)):
-            # PermissionDenied stops the backend chain and fires user_login_failed.
-            raise PermissionDenied("Too many failed login attempts; try again later.")
+        if username:
+            decision = security.register_attempt(username, _ip(request))
+            if not decision.allowed:
+                # PermissionDenied stops the backend chain and fires user_login_failed.
+                raise PermissionDenied(f"Login temporarily blocked: {decision.reason}.")
         return super().authenticate(request, username=username, password=password, **kwargs)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import csv
 import hashlib
@@ -272,7 +273,11 @@ class TestAdminActionsAndAudit:
         assert jobs[0]["_key"] == body(response)["job_id"]
         assert jobs[0]["status"] == "completed"  # eager run with count 0
         audit = body(staff_client.get(f"{API}/operations/audit?action=ingestion.backfill_created"))
-        assert audit["total"] == 1
+        assert [e["outcome"] for e in audit["results"]] == ["ok", "requested"]
+        details = audit["results"][0]["details"]
+        assert details["start"] == "2026-09-01T00:00:00.000Z"
+        assert (details["min_magnitude"], details["window_days"]) == (4.5, 1)
+        assert set(details) == {"start", "end", "min_magnitude", "window_days", "task_id"}
 
     def test_backfill_validation(self, staff_client: Client, arango_db: StandardDatabase) -> None:
         response = staff_client.post(
@@ -324,7 +329,7 @@ class TestLoginThrottling:
     def test_lockout_after_repeated_failures(self) -> None:
         User.objects.create_user("victim", password=PASSWORD)
         request = RequestFactory().post("/login", REMOTE_ADDR="203.0.113.7")
-        for _ in range(security.LOCK_THRESHOLD):
+        for _ in range(security.PAIR_LIMIT):
             assert authenticate(request, username="victim", password="wrong") is None
         # The correct password is refused while locked.
         assert authenticate(request, username="victim", password=PASSWORD) is None
@@ -341,3 +346,143 @@ class TestLoginThrottling:
         assert "auth.login_failed" in actions
         assert "auth.login_succeeded" in actions
         assert not security.is_locked("normal", None)
+
+
+class TestSecurityReviewFixes:
+    """Regression tests for the L4 security review (docs/SECURITY_REVIEW.md)."""
+
+    @pytest.fixture(autouse=True)
+    def _clean(self, arango_db: StandardDatabase) -> None:
+        cache.clear()
+
+    def test_client_ip_ignores_spoofable_forwarded_for(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from apps.operations.audit import client_ip
+        from config.env import get_settings
+
+        meta = {"REMOTE_ADDR": "10.0.0.2", "HTTP_X_FORWARDED_FOR": "6.6.6.6, 203.0.113.9"}
+        assert client_ip(meta) == "10.0.0.2"  # no proxies configured: header ignored
+        monkeypatch.setattr(get_settings(), "num_proxies", 1)
+        assert client_ip(meta) == "203.0.113.9"  # proxy-appended hop, not the spoofed first one
+
+    def test_password_spraying_capped_per_address(self) -> None:
+        request = RequestFactory().post("/login", REMOTE_ADDR="198.51.100.77")
+        for i in range(security.ADDRESS_LIMIT):
+            authenticate(request, username=f"user{i}", password="Winter2026!")
+        User.objects.create_user("target", password=PASSWORD)
+        assert authenticate(request, username="target", password=PASSWORD) is None
+
+    def test_distributed_lockout_cannot_block_known_address(self) -> None:
+        User.objects.create_user("admin2", password=PASSWORD)
+        home = RequestFactory().post("/login", REMOTE_ADDR="192.0.2.10")
+        assert authenticate(home, username="admin2", password=PASSWORD) is not None
+        from django.contrib.auth.signals import user_logged_in
+
+        user_logged_in.send(sender=User, request=home, user=User.objects.get(username="admin2"))
+        for i in range(security.USERNAME_LIMIT + 5):  # attacker rotates addresses
+            attacker = RequestFactory().post("/login", REMOTE_ADDR=f"203.0.113.{i}")
+            authenticate(attacker, username="admin2", password="guess")
+        fresh = RequestFactory().post("/login", REMOTE_ADDR="198.51.100.200")
+        assert authenticate(fresh, username="admin2", password=PASSWORD) is None  # unknown: locked
+        assert authenticate(home, username="admin2", password=PASSWORD) is not None  # known: ok
+
+    def test_attempts_counted_before_password_check(self) -> None:
+        User.objects.create_user("racer", password=PASSWORD)
+        request = RequestFactory().post("/login", REMOTE_ADDR="203.0.113.50")
+        decisions = [security.register_attempt("racer", "203.0.113.50") for _ in range(12)]
+        assert [d.allowed for d in decisions].count(True) == security.PAIR_LIMIT
+        assert authenticate(request, username="racer", password=PASSWORD) is None
+
+    def test_5xx_envelope_hides_internal_detail(
+        self, client: Client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from apps.core.errors import DatabaseUnavailable
+
+        def boom(*args: object, **kwargs: object) -> None:
+            raise DatabaseUnavailable("ArangoDB unreachable at http://10.1.2.3:8529 db=secret")
+
+        monkeypatch.setattr("apps.earthquakes.repository.EventRepository.search", boom)
+        response = client.get(f"{API}/events")
+        assert response.status_code == 503
+        error = body(response)["error"]
+        assert "10.1.2.3" not in json.dumps(error)
+        assert error["message"].startswith("The database is temporarily unavailable")
+
+    def test_rule_cap_holds_under_concurrency(
+        self, arango_db: StandardDatabase, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import threading
+
+        from apps.alerts.domain import RuleConditions, RuleInput
+        from apps.alerts.repository import AlertRepository
+        from apps.core.arango.client import get_db
+        from apps.core.errors import Conflict
+
+        monkeypatch.setattr("apps.alerts.repository.MAX_RULES_PER_USER", 3)
+        rule = RuleInput(name="r", conditions=RuleConditions(tsunami_only=True))
+
+        def create() -> None:
+            with contextlib.suppress(Conflict):
+                AlertRepository(get_db()).create_rule(99, "u99", rule)
+
+        threads = [threading.Thread(target=create) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert arango_db.collection(s.ALERT_RULES).count() == 3
+
+    def test_snapshot_cap(
+        self, user_client: Client, events: StandardDatabase, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("apps.research.services.MAX_SNAPSHOTS_PER_USER", 1)
+        payload = {"title": "t", "filters": {"min_magnitude": "4"}}
+        assert (
+            user_client.post(
+                f"{API}/research/snapshots", payload, content_type="application/json"
+            ).status_code
+            == 201
+        )
+        assert (
+            user_client.post(
+                f"{API}/research/snapshots", payload, content_type="application/json"
+            ).status_code
+            == 409
+        )
+
+    def test_denied_admin_action_is_audited(
+        self, user_client: Client, arango_db: StandardDatabase
+    ) -> None:
+        assert user_client.post(f"{API}/operations/sync").status_code == 403
+        (entry,) = [
+            e
+            for e in arango_db.collection(s.AUDIT_LOG).all()
+            if e["action"] == "operations.permission_denied"
+        ]
+        assert entry["actor_username"] == "researcher"
+        assert entry["outcome"] == "denied"
+
+    def test_failed_admin_action_is_audited(
+        self, staff_client: Client, arango_db: StandardDatabase
+    ) -> None:
+        assert staff_client.post(f"{API}/operations/dead-letters/nope/retry").status_code == 404
+        outcomes = sorted(e["outcome"] for e in arango_db.collection(s.AUDIT_LOG).all()
+                          if e["action"] == "ingestion.dead_letter_retried")  # fmt: skip
+        assert outcomes == ["failed", "requested"]
+
+    def test_deleting_user_removes_their_arango_data(
+        self, client: Client, events: StandardDatabase
+    ) -> None:
+        owner = User.objects.create_user("leaver", password=PASSWORD)
+        client.force_login(owner)
+        client.post(f"{API}/alert-rules", {"name": "r", "conditions": {"tsunami_only": True}},
+                    content_type="application/json")  # fmt: skip
+        client.post(f"{API}/saved-searches", {"name": "s", "filters": {}},
+                    content_type="application/json")  # fmt: skip
+        client.post(f"{API}/research/snapshots", {"title": "t", "filters": {"min_magnitude": "4"}},
+                    content_type="application/json")  # fmt: skip
+        owner.delete()
+        for collection in (s.ALERT_RULES, s.USER_OWNS_RULE, s.SAVED_SEARCHES, s.RESEARCH_SNAPSHOTS):
+            assert events.collection(collection).count() == 0, collection
+        assert events.collection(s.USERS).get(str(owner.pk)) is None

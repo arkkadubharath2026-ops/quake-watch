@@ -14,8 +14,10 @@ from arango.database import Database
 
 from apps.alerts.domain import MAX_RULES_PER_USER, RuleInput
 from apps.core.arango import catalog
+from apps.core.arango import schema as s
 from apps.core.arango.catalog import NamedQuery
 from apps.core.arango.query import run_query
+from apps.core.arango.transactions import exclusive_query as _exclusive
 from apps.core.clock import now_iso
 from apps.core.errors import Conflict
 
@@ -131,7 +133,9 @@ class AlertRepository:
             "created_at": now,
             "updated_at": now,
         }
-        rows = run_query(
+        # Exclusive lock on alert_rules serialises concurrent creates, so the per-user
+        # count-then-insert cap cannot be exceeded by parallel requests.
+        rows = _exclusive(
             self.db,
             "alerts_create_rule",
             """
@@ -151,7 +155,9 @@ class AlertRepository:
                 "max": MAX_RULES_PER_USER,
                 "now": now,
             },
-        ).rows
+            exclusive=[s.ALERT_RULES],
+            write=[s.USERS, s.USER_OWNS_RULE],
+        )
         if not rows:
             raise Conflict(f"Rule limit reached ({MAX_RULES_PER_USER} rules per user).")
         return self._present(rows[0])

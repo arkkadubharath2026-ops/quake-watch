@@ -41,7 +41,11 @@ def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | Non
 
     if isinstance(exc, QuakeWatchError):
         if exc.http_status >= 500:
+            # Internal detail (hosts, database names, driver text) goes to logs only.
             log.error("api_error", code=exc.code, error=exc.message, details=exc.details)
+            return Response(
+                error_body(exc.code, exc.public_message, raw_request), status=exc.http_status
+            )
         return Response(
             error_body(exc.code, exc.message, raw_request, exc.details), status=exc.http_status
         )

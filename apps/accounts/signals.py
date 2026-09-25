@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import user_logged_in, user_login_failed
+from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.http import HttpRequest
 
 from apps.accounts import security
+from apps.accounts.repository import delete_user_data
+from apps.core.arango.client import get_db
 from apps.operations import audit
 
 
@@ -21,7 +25,7 @@ def _meta(request: HttpRequest | None) -> tuple[str | None, str | None]:
 @receiver(user_logged_in)
 def _on_login(sender: Any, request: HttpRequest | None, user: Any, **_: Any) -> None:
     ip, agent = _meta(request)
-    security.reset(user.get_username(), ip)
+    security.record_success(user.get_username(), ip)
     audit.record(
         "auth.login_succeeded",
         actor_id=user.pk,
@@ -39,15 +43,19 @@ def _on_login_failed(
     ip, agent = _meta(request)
     if not username:
         return
-    locked_before = security.is_locked(username, ip)
-    failures = security.register_failure(username, ip)
-    action = "auth.login_locked" if locked_before else "auth.login_failed"
+    # Attempts were already counted in ThrottledModelBackend (before password verification).
+    action = "auth.login_locked" if security.is_locked(username, ip) else "auth.login_failed"
     audit.record(
         action,
         actor_id=None,
         actor_username=username,
-        details={"failures_in_window": failures},
         outcome="denied",
         ip=ip,
         user_agent=agent,
     )
+
+
+@receiver(post_delete, sender=get_user_model())
+def _on_user_deleted(sender: Any, instance: Any, **_: Any) -> None:
+    """Deleting an account removes the user's ArangoDB data (GDPR-style cleanup, review L5)."""
+    delete_user_data(get_db(), int(instance.pk))

@@ -13,6 +13,8 @@ from typing import Any
 class QuakeWatchError(Exception):
     code = "internal_error"
     http_status = 500
+    # Shown to clients for 5xx errors instead of ``message`` (which may carry internal detail).
+    public_message = "An unexpected error occurred."
 
     def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
         super().__init__(message)
@@ -43,6 +45,7 @@ class Conflict(QuakeWatchError):
 class DatabaseUnavailable(QuakeWatchError):
     code = "database_unavailable"
     http_status = 503
+    public_message = "The database is temporarily unavailable. Please retry shortly."
 
 
 class UpstreamError(QuakeWatchError):
@@ -50,6 +53,7 @@ class UpstreamError(QuakeWatchError):
 
     code = "upstream_error"
     http_status = 502
+    public_message = "The upstream data source is unavailable. Please retry later."
 
     def __init__(
         self,

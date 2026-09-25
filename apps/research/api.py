@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from django.http import HttpResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -25,7 +27,11 @@ def _service() -> ResearchService:
 class SnapshotListView(APIView):
     permission_classes = (IsAuthenticated,)
     throttle_classes = (ScopedRateThrottle,)
-    throttle_scope = "expensive"
+
+    def get_throttles(self) -> list[Any]:
+        # Creating a snapshot is far more expensive than listing: separate, stricter scope.
+        self.throttle_scope = "snapshot_create" if self.request.method == "POST" else "user"
+        return super().get_throttles()
 
     def get(self, request: Request) -> Response:
         return Response({"results": _service().list_for_user(authenticated_user(request).id)})

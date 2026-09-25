@@ -183,9 +183,12 @@ REST_FRAMEWORK = {
         "user": "600/min",
         "expensive": "20/min",
         "export": "10/hour",
+        "snapshot_create": "10/hour",
         "admin_action": "30/hour",
     },
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
+    # Client identity for throttles: never trust X-Forwarded-For beyond our own proxies.
+    "NUM_PROXIES": APP.num_proxies,
     # JSON-only API: free the ``format`` query parameter for our own use (research exports).
     "URL_FORMAT_OVERRIDE": None,
 }

@@ -11,8 +11,9 @@ from __future__ import annotations
 import random
 import time
 from collections.abc import Callable, Sequence
+from typing import Any
 
-from arango.database import StandardDatabase, TransactionDatabase
+from arango.database import Database, StandardDatabase, TransactionDatabase
 from arango.exceptions import (
     AQLQueryExecuteError,
     ArangoServerError,
@@ -23,7 +24,7 @@ from arango.exceptions import (
     TransactionAbortError,
 )
 
-from apps.core.arango.query import ERR_CONFLICT, ERR_UNIQUE_CONSTRAINT
+from apps.core.arango.query import ERR_CONFLICT, ERR_UNIQUE_CONSTRAINT, run_query
 from apps.core.errors import DatabaseUnavailable
 from config.logging import get_logger
 
@@ -50,6 +51,7 @@ def run_in_transaction[T](
     *,
     write: Sequence[str],
     read: Sequence[str] = (),
+    exclusive: Sequence[str] = (),
     max_attempts: int = 4,
     lock_timeout: int = 10,
     retry_unique_violations: bool = False,
@@ -65,7 +67,8 @@ def run_in_transaction[T](
         try:
             txn = db.begin_transaction(
                 read=list(read) or None,
-                write=list(write),
+                write=list(write) or None,
+                exclusive=list(exclusive) or None,
                 allow_implicit=False,
                 lock_timeout=lock_timeout,
             )
@@ -86,6 +89,26 @@ def run_in_transaction[T](
             if isinstance(exc, ServerConnectionError):
                 raise DatabaseUnavailable(f"transaction failed: {exc}") from exc
             raise
+
+
+def exclusive_query(
+    db: Database,
+    name: str,
+    aql: str,
+    binds: dict[str, Any],
+    *,
+    exclusive: Sequence[str],
+    write: Sequence[str] = (),
+) -> list[Any]:
+    """Run one AQL statement holding exclusive locks (serialises check-then-insert limits)."""
+    if not isinstance(db, StandardDatabase):  # already inside a transaction: run as-is
+        return run_query(db, name, aql, binds).rows
+    return run_in_transaction(
+        db,
+        lambda txn: run_query(txn, name, aql, binds).rows,
+        write=write,
+        exclusive=exclusive,
+    )
 
 
 def _abort_quietly(txn: TransactionDatabase) -> None:

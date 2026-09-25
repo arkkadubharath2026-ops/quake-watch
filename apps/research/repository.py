@@ -8,8 +8,8 @@ from arango.database import Database
 
 from apps.core.arango import catalog
 from apps.core.arango.catalog import NamedQuery
-from apps.core.arango.client import sync
 from apps.core.arango.query import run_query
+from apps.core.arango.transactions import exclusive_query
 from apps.earthquakes.filters import EventFilter
 from apps.earthquakes.repository import compile_filter
 from apps.ingestion.repository import revision_key
@@ -101,8 +101,21 @@ class ResearchRepository:
             {"ids": run_ids},
         ).rows
 
-    def insert(self, doc: dict[str, Any]) -> None:
-        sync(self.db.collection("research_snapshots").insert(doc, silent=True))
+    def insert_capped(self, doc: dict[str, Any], *, max_per_user: int) -> bool:
+        """Insert unless the owner already has ``max_per_user`` snapshots (serialised)."""
+        rows = exclusive_query(
+            self.db,
+            "research_insert_capped",
+            """
+            LET existing = LENGTH(FOR s IN research_snapshots FILTER s.user_id == @uid RETURN 1)
+            FILTER existing < @max
+            INSERT @doc INTO research_snapshots
+            RETURN 1
+            """,
+            {"uid": doc["user_id"], "max": max_per_user, "doc": doc},
+            exclusive=["research_snapshots"],
+        )
+        return bool(rows)
 
     def list_for_user(self, user_id: int) -> list[dict[str, Any]]:
         return run_query(

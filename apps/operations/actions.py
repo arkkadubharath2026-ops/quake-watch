@@ -6,11 +6,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from apps.core.arango import StandardDatabase
+from apps.core.clock import to_iso
 from apps.core.errors import NotFound, ValidationFailed
-from apps.ingestion.adapters.usgs import UsgsClient
 from apps.ingestion.normalizer import NormalizedRecord, normalize_feature
 from apps.ingestion.pipeline import IngestionPipeline
-from apps.ingestion.services import BackfillRequest, BackfillService
+from apps.ingestion.services import BackfillRequest
 from apps.operations.repository import AuditRepository
 
 
@@ -24,9 +24,8 @@ def _date(raw: Any, field: str) -> datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def create_backfill(
-    db: StandardDatabase, client: UsgsClient, payload: Any, *, requested_by: str
-) -> str:
+def parse_backfill(payload: Any, *, requested_by: str) -> BackfillRequest:
+    """Validate an admin backfill request (bounds are checked again by the service)."""
     if not isinstance(payload, dict):
         raise ValidationFailed("Invalid backfill request.", details={"fields": {"body": "object"}})
     try:
@@ -39,14 +38,22 @@ def create_backfill(
             "Invalid backfill request.",
             details={"fields": {"min_magnitude": "number", "window_days": "integer"}},
         ) from exc
-    request = BackfillRequest(
+    return BackfillRequest(
         start=_date(payload.get("start"), "start"),
         end=_date(payload.get("end"), "end"),
         min_magnitude=min_magnitude,
         window_days=window_days,
         requested_by=requested_by,
     )
-    return BackfillService(db, client).create_job(request)
+
+
+def describe_backfill(request: BackfillRequest) -> dict[str, Any]:
+    return {
+        "start": to_iso(request.start),
+        "end": to_iso(request.end),
+        "min_magnitude": request.min_magnitude,
+        "window_days": request.window_days,
+    }
 
 
 def retry_dead_letter(db: StandardDatabase, key: str) -> dict[str, Any]:

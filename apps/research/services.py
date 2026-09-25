@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from apps.core.clock import now_iso
-from apps.core.errors import NotFound, QuakeWatchError, ValidationFailed
+from apps.core.errors import Conflict, NotFound, QuakeWatchError, ValidationFailed
 from apps.earthquakes.domain import SCHEMA_VERSION
 from apps.earthquakes.filters import EventFilter
 from apps.ingestion.revision_policy import POLICY_VERSION
 from apps.research import manifest as m
 
 MAX_SNAPSHOT_ROWS = 50_000
+MAX_SNAPSHOTS_PER_USER = 20
 ExportFormat = Literal["zip", "csv", "json"]
 
 
@@ -22,7 +23,7 @@ class SnapshotStore(Protocol):
     def freeze_members(self, f: EventFilter, *, limit: int) -> list[list[Any]]: ...
     def pinned_revisions(self, members: list[list[Any]]) -> list[dict[str, Any]]: ...
     def source_requests(self, run_ids: list[str]) -> list[dict[str, Any]]: ...
-    def insert(self, doc: dict[str, Any]) -> None: ...
+    def insert_capped(self, doc: dict[str, Any], *, max_per_user: int) -> bool: ...
     def list_for_user(self, user_id: int) -> list[dict[str, Any]]: ...
     def get(self, user_id: int, snapshot_id: str) -> dict[str, Any] | None: ...
     def delete(self, user_id: int, snapshot_id: str) -> bool: ...
@@ -91,7 +92,7 @@ class ResearchService:
             revision_policy_version=POLICY_VERSION,
             source_requests=self.store.source_requests(run_ids),
         )
-        self.store.insert(
+        inserted = self.store.insert_capped(
             {
                 "_key": snapshot_id,
                 "user_id": user_id,
@@ -104,8 +105,13 @@ class ResearchService:
                 "content_sha256": content_hash,
                 "application_version": self.application_version,
                 "manifest": manifest,
-            }
+            },
+            max_per_user=MAX_SNAPSHOTS_PER_USER,
         )
+        if not inserted:
+            raise Conflict(
+                f"Snapshot limit reached ({MAX_SNAPSHOTS_PER_USER}); delete an old snapshot first."
+            )
         return {"id": snapshot_id, **self._summary(manifest)}
 
     def _reconstruct(self, members: list[list[Any]]) -> tuple[list[dict[str, Any]], list[str]]:

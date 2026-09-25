@@ -18,6 +18,7 @@ from apps.core.arango import catalog
 from apps.core.arango.catalog import NamedQuery
 from apps.core.arango.client import sync_optional
 from apps.core.arango.query import run_query
+from apps.core.arango.transactions import exclusive_query
 from apps.core.clock import from_iso, to_iso
 from apps.earthquakes.filters import SORT_FIELDS, EventFilter
 
@@ -450,7 +451,7 @@ class SavedSearchRepository:
         return run_query(self.db, SAVED_BY_USER.name, SAVED_BY_USER.aql, {"user_id": user_id}).rows
 
     def create(self, user_id: int, doc: dict[str, Any]) -> dict[str, Any] | None:
-        rows = run_query(
+        rows = exclusive_query(
             self.db,
             "saved_searches_create",
             """
@@ -460,7 +461,8 @@ class SavedSearchRepository:
             RETURN MERGE(UNSET(NEW, "_id", "_rev", "_key"), {id: NEW._key})
             """,
             {"uid": user_id, "doc": doc, "max": MAX_SAVED_SEARCHES},
-        ).rows
+            exclusive=["saved_searches"],
+        )
         return rows[0] if rows else None
 
     def get(self, user_id: int, search_id: str) -> dict[str, Any] | None:

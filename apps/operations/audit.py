@@ -6,11 +6,11 @@ import uuid
 from typing import Any
 
 import structlog
-from django.conf import settings
 
 from apps.core.arango.client import get_db
 from apps.core.clock import now_iso
 from apps.operations.repository import AuditRepository
+from config.env import get_settings
 from config.logging import get_logger
 
 log = get_logger(__name__)
@@ -23,6 +23,7 @@ ACTIONS = (
     "auth.login_failed",
     "auth.login_locked",
     "auth.signup",
+    "operations.permission_denied",
 )
 
 
@@ -61,10 +62,17 @@ def record(
 
 
 def client_ip(meta: dict[str, Any]) -> str | None:
-    """Direct peer address. X-Forwarded-For is only trusted behind the configured proxy, where
-    SECURE_PROXY_SSL_HEADER is set; the first hop is then the client."""
+    """Client address as seen by our own infrastructure (spoof-resistant).
+
+    With ``QW_NUM_PROXIES = n`` trusted proxies, each appends the address it received the request
+    from to X-Forwarded-For, so the client is the n-th entry from the right; anything further left
+    is client-controlled and ignored. With no proxies the socket peer (REMOTE_ADDR) is used.
+    """
+    proxies = get_settings().num_proxies
     forwarded = meta.get("HTTP_X_FORWARDED_FOR")
-    if forwarded and getattr(settings, "SECURE_PROXY_SSL_HEADER", None):
-        return str(forwarded).split(",")[0].strip()[:64]
+    if proxies and forwarded:
+        hops = [h.strip() for h in str(forwarded).split(",") if h.strip()]
+        if len(hops) >= proxies:
+            return hops[-proxies][:64]
     remote = meta.get("REMOTE_ADDR")
     return str(remote)[:64] if remote else None
