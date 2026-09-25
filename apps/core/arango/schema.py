@@ -187,12 +187,17 @@ class IndexSpec:
     sparse: bool = False
     geo_json: bool = False
     expire_after: int | None = None
+    # Extra attributes carried in the index entries (persistent only): filters on them are
+    # answered from the index, so a sorted walk or a count never has to fetch the document.
+    stored_values: tuple[str, ...] = ()
 
     def as_arango(self) -> dict[str, Any]:
         spec: dict[str, Any] = {"type": self.type, "fields": list(self.fields), "name": self.name}
         if self.type == "persistent":
             spec["unique"] = self.unique
             spec["sparse"] = self.sparse
+            if self.stored_values:
+                spec["storedValues"] = list(self.stored_values)
         elif self.type == "geo":
             spec["geoJson"] = self.geo_json
         elif self.type == "ttl":
@@ -209,8 +214,21 @@ class CollectionSpec:
     purpose: str = ""
 
 
-def _p(name: str, *fields: str, unique: bool = False, sparse: bool = False) -> IndexSpec:
-    return IndexSpec(name=name, type="persistent", fields=fields, unique=unique, sparse=sparse)
+def _p(
+    name: str,
+    *fields: str,
+    unique: bool = False,
+    sparse: bool = False,
+    stored: tuple[str, ...] = (),
+) -> IndexSpec:
+    return IndexSpec(
+        name=name,
+        type="persistent",
+        fields=fields,
+        unique=unique,
+        sparse=sparse,
+        stored_values=stored,
+    )
 
 
 COLLECTIONS: tuple[CollectionSpec, ...] = (
@@ -229,8 +247,17 @@ COLLECTIONS: tuple[CollectionSpec, ...] = (
                 unique=True,
             ),
             IndexSpec("qw_events_geo", "geo", ("coordinates",), geo_json=True),
-            _p("qw_events_occurred_at", "occurred_at"),
-            _p("qw_events_magnitude", "magnitude"),
+            # _key completes the list's sort order (occurred_at, _key) so the index yields rows
+            # already sorted and a page reads only its own entries; the stored values answer the
+            # always-present live filter and the most common magnitude filter from the index
+            # (before/after numbers: docs/BENCHMARKS.md).
+            _p(
+                "qw_events_occurred_at",
+                "occurred_at",
+                "_key",
+                stored=("merged_into", "magnitude"),
+            ),
+            _p("qw_events_magnitude", "magnitude", "_key", stored=("merged_into",)),
         ),
     ),
     CollectionSpec(

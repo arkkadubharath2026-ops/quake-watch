@@ -125,6 +125,31 @@ def search_aql(f: EventFilter) -> tuple[str, dict[str, Any]]:
     return aql, {**compiled.binds, "fields": list(LIST_FIELDS)}
 
 
+def search_page_aql(f: EventFilter) -> tuple[str, dict[str, Any]]:
+    """One page plus the total match count, in one query (one consistent snapshot).
+
+    The total comes from a separate ``COLLECT WITH COUNT`` over the same filters rather than
+    ``fullCount``: ``fullCount`` forces the sorted page query to materialise every matching
+    document, while the count subquery is answered from index entries (docs/BENCHMARKS.md).
+    """
+    compiled = compile_filter(f)
+    page, binds = search_aql(f)
+    aql = "\n".join(
+        [
+            "LET total = FIRST(",
+            compiled.body(),
+            "  COLLECT WITH COUNT INTO n",
+            "  RETURN n",
+            ")",
+            "LET rows = (",
+            page,
+            ")",
+            "RETURN {total: total, rows: rows}",
+        ]
+    )
+    return aql, binds
+
+
 # ---- representative variants registered for EXPLAIN / docs -----------------------------------
 def _with_page(binds: dict[str, Any]) -> Callable[[], dict[str, Any]]:
     return lambda: {**binds, "offset": 0, "limit": 25}
@@ -133,7 +158,7 @@ def _with_page(binds: dict[str, Any]) -> Callable[[], dict[str, Any]]:
 def _variant(name: str, question: str, params: dict[str, str], indexes: tuple[str, ...],
              features: tuple[str, ...]) -> None:  # fmt: skip
     f = EventFilter.from_params(params)
-    aql, binds = search_aql(f)
+    aql, binds = search_page_aql(f)
     catalog.register(
         NamedQuery(
             name=name,
@@ -330,15 +355,12 @@ class EventRepository:
     def search(
         self, f: EventFilter, *, offset: int, limit: int
     ) -> tuple[list[dict[str, Any]], int]:
-        aql, binds = search_aql(f)
+        aql, binds = search_page_aql(f)
         result = run_query(
-            self.db,
-            "events_search",
-            aql,
-            {**binds, "offset": offset, "limit": limit},
-            full_count=True,
+            self.db, "events_search", aql, {**binds, "offset": offset, "limit": limit}
         )
-        return result.rows, int(result.full_count or 0)
+        page = result.rows[0]
+        return page["rows"], int(page["total"] or 0)
 
     def export_rows(self, f: EventFilter, *, limit: int) -> list[dict[str, Any]]:
         aql, binds = search_aql(f)

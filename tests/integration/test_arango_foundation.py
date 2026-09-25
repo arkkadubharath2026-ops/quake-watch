@@ -74,8 +74,28 @@ class TestMigrations:
         assert "events.qw_events_magnitude" in report.replaced_indexes
         assert "events.qw_stray_index" in report.dropped_indexes
         current = {ix["name"]: ix for ix in events.indexes()}
-        assert current["qw_events_magnitude"]["fields"] == ["magnitude"]
+        assert current["qw_events_magnitude"]["fields"] == ["magnitude", "_key"]
         assert "qw_stray_index" not in current
+
+    def test_missing_stored_values_count_as_drift(self, arango_db: StandardDatabase) -> None:
+        events = arango_db.collection(s.EVENTS)
+        declared = next(ix for ix in events.indexes() if ix.get("name") == "qw_events_occurred_at")
+        assert declared["storedValues"] == ["merged_into", "magnitude"]
+        events.delete_index(declared["id"])
+        events.add_index(
+            {
+                "type": "persistent",
+                "fields": ["occurred_at", "_key"],
+                "name": "qw_events_occurred_at",
+            }
+        )
+
+        report = apply_schema(arango_db)
+
+        assert report.replaced_indexes == ["events.qw_events_occurred_at"]
+        current = {ix["name"]: ix for ix in events.indexes()}
+        assert current["qw_events_occurred_at"]["storedValues"] == ["merged_into", "magnitude"]
+        assert apply_schema(arango_db).replaced_indexes == []  # idempotent once repaired
 
 
 class TestDataMigrations:

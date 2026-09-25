@@ -20,6 +20,8 @@ from apps.core.arango import catalog
 from apps.core.arango import schema as s
 from apps.core.arango.query import explain, indexes_used
 from apps.core.resilience import CircuitBreaker
+from apps.earthquakes.filters import EventFilter
+from apps.earthquakes.repository import EventRepository, search_page_aql
 from apps.ingestion.adapters.http import ResilientHttpClient
 from apps.ingestion.adapters.usgs import UsgsClient
 from apps.ingestion.normalizer import NormalizedRecord, normalize_feature, parse_feed
@@ -417,3 +419,27 @@ class TestQueryCatalog:
                 list(api_db.aql.execute(query.aql, bind_vars=binds))  # executes without error
             used = indexes_used(explain(api_db, query.aql, binds))
             assert query.plan_ok(used), (query.name, query.expected_indexes, used)
+
+    def test_list_total_matches_an_independent_count(self, api_db: StandardDatabase) -> None:
+        f = EventFilter(min_magnitude=2.5)
+        rows, total = EventRepository(api_db).search(f, offset=0, limit=5)
+        expected = next(
+            api_db.aql.execute(
+                "RETURN LENGTH(FOR e IN events FILTER e.merged_into == null "
+                "AND e.magnitude >= 2.5 RETURN 1)"
+            )
+        )
+        assert total == expected > 5
+        assert len(rows) == 5
+        assert [r["occurred_at"] for r in rows] == sorted(
+            (r["occurred_at"] for r in rows), reverse=True
+        )
+
+    def test_newest_first_list_is_served_in_index_order(self, api_db: StandardDatabase) -> None:
+        # Regression (docs/BENCHMARKS.md, tuning history): with the (occurred_at, _key) index the
+        # page needs no SORT node, and the total is not computed with fullCount.
+        aql, binds = search_page_aql(EventFilter())
+        plan = explain(api_db, aql, {**binds, "offset": 0, "limit": 25})
+        types = [node["type"] for node in plan["nodes"]]
+        assert "SortNode" not in types
+        assert "qw_events_occurred_at" in indexes_used(plan)

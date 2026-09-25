@@ -155,5 +155,5 @@ class Command(BaseCommand):
                 "```\n</details>\n",
             ]
         target = Path(settings.BASE_DIR) / "docs" / "AQL_QUERIES.md"
-        target.write_text("\n".join(lines), encoding="utf-8")
+        target.write_text("\n".join(lines), encoding="utf-8", newline="\n")  # LF on Windows too
         self.stdout.write(self.style.SUCCESS(f"wrote {target}"))

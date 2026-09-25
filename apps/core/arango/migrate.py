@@ -50,6 +50,9 @@ def _normalize_existing(index: dict[str, Any]) -> dict[str, Any]:
     if kind == "persistent":
         norm["unique"] = bool(index.get("unique", False))
         norm["sparse"] = bool(index.get("sparse", False))
+        stored = index.get("stored_values", index.get("storedValues")) or []
+        if stored:
+            norm["storedValues"] = list(stored)
     elif kind == "geo":
         norm["geoJson"] = bool(index.get("geo_json", index.get("geoJson", False)))
     elif kind == "ttl":
