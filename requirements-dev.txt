@@ -1,0 +1,12 @@
+-r requirements.txt
+pytest>=8.4,<9
+pytest-django>=4.11,<5
+pytest-cov>=6.2,<7
+respx>=0.22,<0.23         # httpx transport mocking for contract/resilience tests of source adapters
+freezegun>=1.5,<2         # deterministic clocks for cooldown/freshness tests
+playwright>=1.55,<2       # browser end-to-end tests
+pytest-playwright>=0.7,<1
+ruff>=0.13,<1             # lint + format
+mypy>=1.18,<2             # static type checking
+django-stubs>=5.2,<7
+pip-audit>=2.9,<3         # dependency vulnerability scanning (CI)

@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+var/
+staticfiles/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+test-results/
+playwright-report/
+benchmarks/results/*.json
+# graphify: keep the report + graph (shared context); ignore caches/interpreter pointers
+graphify-out/.graphify_*
+graphify-out/cache/
+graphify-out/graph.html
+.claude/settings.local.json

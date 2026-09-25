@@ -1,0 +1,445 @@
+# QuakeWatch
+
+> Real-time earthquake intelligence, revision-aware analytics, and reproducible seismic-data exploration using ArangoDB and Django.
+
+QuakeWatch is an open-source academic and research-oriented web application that ingests earthquake information from authoritative public sources, stores it in a multi-model NoSQL database, tracks how events evolve after first publication, and exposes the data through maps, search, analytics, alert rules, and research exports.
+
+**QuakeWatch is not an earthquake prediction system and is not an official emergency-warning service.**
+
+## Why QuakeWatch?
+
+A basic earthquake project can fetch an API and put markers on a map. QuakeWatch is designed to go further:
+
+- continuously ingest live earthquake data,
+- backfill historical catalog data,
+- perform idempotent updates,
+- preserve event revision history,
+- expose source provenance,
+- query geospatially with ArangoDB,
+- model real relationships as a graph,
+- provide explainable watch/alert rules,
+- create reproducible research datasets,
+- benchmark indexes and AQL query performance,
+- remain useful when the upstream source is temporarily unavailable.
+
+This makes the project suitable for a serious NoSQL/database course while also creating a foundation for later research.
+
+## Primary Data Source
+
+### U.S. Geological Survey (USGS)
+
+Official real-time earthquake feeds:
+
+https://earthquake.usgs.gov/earthquakes/feed/
+
+GeoJSON summary format:
+
+https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php
+
+GeoJSON event detail format:
+
+https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson_detail.php
+
+Earthquake Catalog API:
+
+https://earthquake.usgs.gov/fdsnws/event/1/
+
+USGS should be credited as the data source. USGS-produced information is generally public domain in the United States, while third-party material must be handled according to its own rights/attribution requirements.
+
+## Core Workflow
+
+```text
+USGS Real-Time / Catalog APIs
+            │
+            ▼
+    Django Source Adapters
+            │
+            ▼
+ Validate + Normalize + Hash
+            │
+            ▼
+   Idempotent Event Upsert
+       │            │
+       │ changed?   │ new?
+       ▼            ▼
+Revision Store   Canonical Event
+       └──────┬─────┘
+              ▼
+          ArangoDB
+    Documents + Graph + Geo
+              │
+       ┌──────┼────────┐
+       ▼      ▼        ▼
+     Search Analytics Alerts
+       │      │        │
+       └──────┼────────┘
+              ▼
+     Django Web Application
+              │
+  Dashboard / Map / Explorer
+  Detail / Research / Admin
+```
+
+## Technology Stack
+
+### Core
+- **Database:** ArangoDB Community Edition
+- **Backend:** Python + Django
+- **Frontend:** HTML, CSS, JavaScript, Bootstrap
+- **Repository:** GitHub
+
+### Recommended
+- **Map:** Leaflet.js
+- **Charts:** Chart.js
+- **Background jobs:** Celery
+- **Broker/cache:** Redis
+- **Testing:** pytest + pytest-django
+- **Containers:** Docker / Docker Compose
+- **CI:** GitHub Actions
+
+The architecture intentionally starts as a modular monolith instead of unnecessary microservices.
+
+## Major Features
+
+### Real-Time Situational Dashboard
+- current source freshness,
+- recent event count,
+- strongest recent events,
+- significant events,
+- magnitude/depth summaries,
+- activity timeline.
+
+### Live Earthquake Map
+- interactive map,
+- marker clustering,
+- magnitude-aware visualization,
+- viewport filtering,
+- event quick view.
+
+### Earthquake Explorer
+Filter by:
+- date/time,
+- magnitude,
+- depth,
+- location,
+- geographic radius/bounding box,
+- alert level,
+- tsunami flag,
+- status,
+- network.
+
+### Event Detail
+- canonical current data,
+- source metadata,
+- revision timeline,
+- related region/network,
+- scientific-product availability,
+- provenance/raw-source metadata.
+
+### Revision Intelligence
+QuakeWatch keeps meaningful changes rather than silently overwriting them:
+- magnitude changes,
+- depth changes,
+- epicenter updates,
+- status changes,
+- alert changes,
+- product updates.
+
+### Alerts / Watch Rules
+Users can create deterministic rules such as:
+
+```text
+Magnitude >= 5.5
+AND within 300 km of selected location
+AND depth <= 100 km
+```
+
+Every match explains exactly why it triggered.
+
+### Analytics
+- magnitude distribution,
+- depth distribution,
+- events over time,
+- region/network statistics,
+- revision-frequency analysis,
+- ingestion-latency analysis.
+
+### Research Lab
+- freeze filtered datasets,
+- export CSV/JSON,
+- generate metadata manifest,
+- record source/query/schema/app version,
+- checksum exports for reproducibility.
+
+### Operations Dashboard
+- sync history,
+- upstream failures,
+- retries,
+- rejected records,
+- freshness,
+- DB/query performance.
+
+## Proposed ArangoDB Model
+
+### Document Collections
+
+```text
+events
+event_revisions
+regions
+networks
+alert_rules
+alert_matches
+saved_searches
+research_snapshots
+ingestion_runs
+dead_letters
+```
+
+### Edge Collections
+
+```text
+event_in_region
+event_reported_by_network
+user_owns_rule
+rule_matched_event
+```
+
+Graph edges are created only when they support a real product or research query.
+
+## Example Event Document
+
+```json
+{
+  "_key": "usgs_us7000xxxx",
+  "source": "USGS",
+  "source_event_id": "us7000xxxx",
+  "magnitude": 5.9,
+  "magnitude_type": "mww",
+  "place": "Example region",
+  "occurred_at": "2026-09-21T00:00:00Z",
+  "source_updated_at": "2026-09-21T00:04:00Z",
+  "longitude": 80.1,
+  "latitude": 15.4,
+  "depth_km": 18.2,
+  "coordinates": [80.1, 15.4],
+  "alert": "green",
+  "status": "reviewed",
+  "tsunami": false,
+  "significance": 0,
+  "first_seen_at": "2026-09-21T00:01:30Z",
+  "last_ingested_at": "2026-09-21T00:05:00Z",
+  "schema_version": 1
+}
+```
+
+## Repository Layout
+
+```text
+quakewatch/
+├─ apps/
+│  ├─ accounts/
+│  ├─ earthquakes/
+│  ├─ ingestion/
+│  ├─ geo/
+│  ├─ alerts/
+│  ├─ analytics/
+│  ├─ research/
+│  └─ operations/
+├─ config/
+├─ templates/
+├─ static/
+├─ tests/
+│  ├─ unit/
+│  ├─ integration/
+│  ├─ contract/
+│  └─ e2e/
+├─ scripts/
+├─ docs/
+│  ├─ PRD.md
+│  ├─ ESD.md
+│  └─ adr/
+├─ docker/
+├─ docker-compose.yml
+├─ requirements.txt
+├─ manage.py
+└─ README.md
+```
+
+## Development Phases
+
+### Phase 1 — Database + Ingestion Spine
+- set up ArangoDB,
+- create collections/indexes,
+- implement USGS summary adapter,
+- historical catalog importer,
+- idempotent upserts,
+- ingestion-run logs.
+
+### Phase 2 — Core Application
+- dashboard,
+- explorer,
+- live map,
+- detail page,
+- pagination and filtering.
+
+### Phase 3 — Database Depth
+- graph edges,
+- geospatial queries,
+- 15+ documented AQL queries,
+- transactions,
+- index benchmarking,
+- query-plan analysis.
+
+### Phase 4 — Product Differentiators
+- revision timeline,
+- saved searches,
+- alert/watch rules,
+- research snapshots,
+- provenance.
+
+### Phase 5 — Hardening
+- retries/backoff,
+- dead-letter handling,
+- caching,
+- security,
+- observability,
+- automated tests.
+
+### Phase 6 — Research Extension
+Choose one focused research question and build a reproducible experiment rather than adding random AI.
+
+## Research Directions
+
+A publication should contain a measurable research contribution, not just the software.
+
+### 1. Earthquake Record Revision Dynamics
+Study how magnitude, location, depth, and review status change between initial and later reports.
+
+### 2. Multi-Source Consistency
+Add EMSC as a second open source and measure:
+- first-report latency,
+- magnitude disagreement,
+- epicentral disagreement,
+- convergence over time.
+
+EMSC FDSN Event API:
+
+https://www.seismicportal.eu/fdsn-wsevent.html
+
+### 3. Revision-Likelihood Modeling
+Predict whether an early event record will later receive a material metadata revision.
+
+This is a data-quality problem and must **not** be described as earthquake prediction.
+
+### 4. Spatiotemporal Sequence Analysis
+Study event clustering with explicit, scientifically justified temporal/spatial criteria.
+
+## Academic Requirements Covered
+
+QuakeWatch demonstrates:
+
+- open-source NoSQL DBMS,
+- schema and graph design,
+- 500+ database records,
+- frontend ↔ backend ↔ database connectivity,
+- CRUD,
+- complex AQL,
+- aggregation,
+- graph traversal,
+- geospatial queries,
+- transactions,
+- indexes,
+- query optimization,
+- security,
+- testing,
+- performance tuning,
+- dashboards/reports,
+- GitHub repository,
+- demo-ready web application.
+
+For relational wording in the academic rubric, document the correct ArangoDB equivalent instead of pretending ArangoDB is SQL.
+
+## Example AQL Questions
+
+The final project should include at least 15 meaningful queries:
+
+1. strongest events in a date range,
+2. events within a geographic radius,
+3. average magnitude by region,
+4. magnitude distribution by month,
+5. deepest events,
+6. tsunami-flagged events,
+7. reviewed vs automatic status counts,
+8. events with the most revisions,
+9. average time from first seen to reviewed,
+10. graph traversal from region to associated events,
+11. network-specific event statistics,
+12. significant events by period,
+13. watch-rule matched events,
+14. events whose magnitude changed beyond a threshold,
+15. ingestion latency percentiles.
+
+## Data Integrity Rules
+
+- Source + event ID defines external identity.
+- Repeat ingestion is idempotent.
+- Canonical data reflects the latest accepted source revision.
+- Meaningful source changes create immutable revision records.
+- Application-derived values never overwrite source values.
+- Every research export is traceable to filters and generation metadata.
+- Upstream failure is visible through freshness/status indicators.
+
+## Safety and Scientific Integrity
+
+QuakeWatch must clearly state:
+
+- it does not reliably predict earthquakes,
+- application notifications are not emergency early warnings,
+- official emergency agencies remain authoritative,
+- derived analytics may contain uncertainty,
+- users should follow official local emergency guidance.
+
+## Competitor / Reference Systems
+
+### USGS
+- real-time feeds/catalog,
+- ShakeMap,
+- PAGER,
+- DYFI,
+- ENS,
+- ShakeAlert.
+
+https://earthquake.usgs.gov/
+
+### EMSC LastQuake
+- earthquake information,
+- crowdsourced felt/damage testimony,
+- user comments/media.
+
+https://www.emsc-csem.org/lastquake/
+
+QuakeWatch's differentiation is **revision-aware data engineering + provenance + NoSQL graph/geospatial exploration + reproducible research workflows**, not a claim to be more authoritative than these organizations.
+
+## License
+
+Choose the repository license deliberately.
+
+MIT or Apache-2.0 are common choices for the application source code. Data attribution and third-party licenses remain separate from the code license.
+
+Suggested acknowledgment:
+
+> Earthquake data courtesy of the U.S. Geological Survey (USGS).
+
+## Documentation
+
+- `docs/PRD.md` — product scope, users, differentiation, requirements, research potential.
+- `docs/ESD.md` — architecture, data model, ingestion, reliability, security, testing, deployment.
+
+## Current Recommended Milestone
+
+Build this first:
+
+> Historical backfill + live USGS synchronization + idempotent ArangoDB storage + revision tracking + system-health dashboard.
+
+Once that foundation is correct, the map, analytics, alerts, and research layer become much easier to build reliably.

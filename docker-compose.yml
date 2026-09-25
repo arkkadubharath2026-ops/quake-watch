@@ -1,0 +1,76 @@
+# Local / college-demo deployment profile (ESD §18): web, worker, beat, redis, arangodb.
+# Secrets come from .env (never committed). See .env.example.
+name: quakewatch
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      APP_VERSION: ${APP_VERSION:-dev}
+  env_file: .env
+  environment:
+    QW_ARANGO_URL: http://arangodb:8529
+    QW_REDIS_URL: redis://redis:6379/0
+    QW_AUTH_DB_PATH: /data/auth/auth.sqlite3
+  volumes:
+    - auth_data:/data/auth
+  depends_on:
+    arangodb:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  arangodb:
+    image: arangodb:3.12.5
+    environment:
+      ARANGO_ROOT_PASSWORD: ${QW_ARANGO_ROOT_PASSWORD:?set QW_ARANGO_ROOT_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:8529:8529"
+    volumes:
+      - arango_data:/var/lib/arangodb3
+      - arango_apps:/var/lib/arangodb3-apps
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null --user root:$$ARANGO_ROOT_PASSWORD http://127.0.0.1:8529/_api/version || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  web:
+    <<: *app
+    command: ["/app/docker/entrypoint.sh", "web"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    <<: *app
+    command: ["/app/docker/entrypoint.sh", "worker"]
+
+  beat:
+    <<: *app
+    command: ["/app/docker/entrypoint.sh", "beat"]
+
+volumes:
+  arango_data:
+  arango_apps:
+  auth_data:
