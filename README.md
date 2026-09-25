@@ -38,6 +38,9 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt   # (b
 .venv/Scripts/python manage.py backfill --start 2026-08-26 --end 2026-09-25 --min-magnitude 2.5
 ```
 
+Then run `.venv/Scripts/python manage.py runserver` and open http://127.0.0.1:8000 — create an account
+at `/accounts/signup/` (use `manage.py createsuperuser` for a staff account that can open `/operations/`).
+
 Full stack in containers (web + Celery worker + beat):
 
 ```bash
@@ -68,12 +71,12 @@ suite mocks the database.
 | L0 Harness | repo, Docker, Claude tooling (CLAUDE.md, agents, skills, hooks), Graphify | done |
 | L1 Foundations | typed config, logging, errors, metrics, ArangoDB schema/migrations/transactions, health | done |
 | L2 Ingestion | USGS adapters, normaliser, revision policy, identity claims, pipeline, backfill, enrichment, Celery jobs | done |
-| L3 Query & API | event search/map/detail/revisions/provenance/graph, analytics, freshness, ops API, 36 catalogued AQL queries | done |
+| L3 Query & API | event search/map/detail/revisions/provenance/graph, analytics, freshness, ops API, 47 catalogued AQL queries | done |
 | L4 User features | explainable alert rules + in-transaction matching, saved searches, reproducible research snapshots, admin actions, audit trail, login throttling | done |
-| L5 UI | Bootstrap design system, dashboard, map, explorer, detail, analytics, research, operations | next |
-| L6 Hardening | benchmarks, E2E, CI, security review | planned |
+| L5 UI | design system (light/dark), dashboard, live map, explorer, event detail, analytics, alerts, research lab, status, operations, about, accounts | done |
+| L6 Hardening | index benchmarks, Playwright E2E, accessibility audit, CI | next |
 
-Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · AQL: [docs/AQL_QUERIES.md](docs/AQL_QUERIES.md) · Decisions: [docs/adr/](docs/adr/) ·
+Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · UI: [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) · Progress: [docs/PROGRESS.md](docs/PROGRESS.md) · AQL: [docs/AQL_QUERIES.md](docs/AQL_QUERIES.md) · Decisions: [docs/adr/](docs/adr/) ·
 Dependencies: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md)
 
 ## Primary Data Source

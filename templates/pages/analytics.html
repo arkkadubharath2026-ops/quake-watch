@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Analytics{% endblock %}
+{% block page_id %}analytics{% endblock %}
+{% block content %}
+<div class="qw-page-header">
+  <div>
+    <h1>Analytics</h1>
+    <p>Aggregations computed in ArangoDB over the stored catalogue. Counts reflect what QuakeWatch has ingested, not the complete global record.</p>
+  </div>
+  <form id="window-form" class="d-flex align-items-end gap-2" aria-label="Analysis window">
+    <div>
+      <label class="form-label" for="days">Window</label>
+      <select class="form-select" id="days" name="days">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="365">Last 365 days</option>
+      </select>
+    </div>
+  </form>
+</div>
+
+<div class="alert alert-secondary qw-disclaimer" role="note">
+  Coverage note: historical backfill imports M2.5+ events; smaller events are present only from the start of live monitoring.
+  Derived statistics (regions, latency) are QuakeWatch computations and are labelled as such.
+</div>
+
+<h2 class="mt-4">Activity over time</h2>
+<div class="row g-3">
+  <section class="col-lg-6" aria-labelledby="monthly-h"><div class="qw-card"><h3 id="monthly-h">Events per month</h3><div id="monthly"></div></div></section>
+  <section class="col-lg-6" aria-labelledby="weekly-h"><div class="qw-card"><h3 id="weekly-h">Significant events per ISO week</h3><div id="weekly"></div></div></section>
+</div>
+
+<h2 class="mt-4">Distributions</h2>
+<div class="row g-3">
+  <section class="col-lg-6" aria-labelledby="mag-h"><div class="qw-card"><h3 id="mag-h">Magnitude (0.5 bins)</h3><div id="mag-hist"></div></div></section>
+  <section class="col-lg-6" aria-labelledby="depth-h"><div class="qw-card"><h3 id="depth-h">Depth (10 km bins)</h3><div id="depth-hist"></div></div></section>
+  <section class="col-lg-8" aria-labelledby="scatter-h"><div class="qw-card"><h3 id="scatter-h">Magnitude vs depth</h3><div id="scatter"></div></div></section>
+  <section class="col-lg-4" aria-labelledby="status-h"><div class="qw-card"><h3 id="status-h">USGS review status</h3><div id="status"></div></div></section>
+</div>
+
+<h2 class="mt-4">Regions and networks</h2>
+<div class="row g-3">
+  <section class="col-lg-6" aria-labelledby="regions-h"><div class="qw-card"><h3 id="regions-h">Most active regions <span class="small fw-normal text-body-secondary">(derived from place text)</span></h3><div id="regions"></div></div></section>
+  <section class="col-lg-6" aria-labelledby="networks-h"><div class="qw-card"><h3 id="networks-h">Contributing networks</h3><div id="networks"></div></div></section>
+</div>
+
+<h2 class="mt-4">Revision dynamics</h2>
+<div class="row g-3">
+  <section class="col-lg-4" aria-labelledby="ttr-h"><div class="qw-card"><h3 id="ttr-h">Time to “reviewed”</h3><div id="ttr"></div></div></section>
+  <section class="col-lg-8" aria-labelledby="fields-h"><div class="qw-card"><h3 id="fields-h">Which fields get revised</h3><div id="fields"></div></div></section>
+  <section class="col-lg-6" aria-labelledby="most-h"><div class="qw-card"><h3 id="most-h">Most revised events</h3><div id="most-revised"></div></div></section>
+  <section class="col-lg-6" aria-labelledby="magchg-h"><div class="qw-card"><h3 id="magchg-h">Magnitude changes ≥ 0.3</h3><div id="mag-changes"></div></div></section>
+</div>
+
+<h2 class="mt-4">Ingestion latency <span class="small fw-normal text-body-secondary">(derived)</span></h2>
+<section class="qw-card" aria-label="Ingestion latency"><div id="latency"></div></section>
+{% endblock %}
+{% block scripts %}
+<script src="{% static 'vendor/chart.js/chart.umd.min.js' %}"></script>
+<script src="{% static 'qw/js/charts.js' %}"></script>
+<script src="{% static 'qw/js/analytics.js' %}"></script>
+{% endblock %}

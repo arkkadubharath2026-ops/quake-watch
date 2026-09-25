@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Bad request{% endblock %}
+{% block content %}
+<div class="qw-state my-5" data-kind="error" role="alert">
+  <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+  <h1>Bad request</h1>
+  <p>{% if exception and "400" == "403" %}{{ exception }}{% else %}The request could not be understood.{% endif %}</p>
+  <p class="d-flex gap-2 justify-content-center">
+    <a class="btn btn-primary" href="{% url 'pages:dashboard' %}">Go to the dashboard</a>
+    <a class="btn btn-outline-secondary" href="{% url 'pages:explorer' %}">Search events</a>
+  </p>
+</div>
+{% endblock %}

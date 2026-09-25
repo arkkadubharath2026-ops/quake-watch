@@ -44,17 +44,17 @@ the same). Never edit percentages by hand — they are computed.
 
 ## L5 User interface
 - [x] Frontend libraries vendored and hash-locked (no CDN, strict CSP)
-- [ ] Design system: tokens, typography, light/dark themes, component states
-- [ ] Base layout: navigation, freshness indicator, attribution, safety disclaimer, error pages
-- [ ] Dashboard page
-- [ ] Live Map page (clusters, viewport loading, side panel, legend)
-- [ ] Explorer page (filters, sortable table, map toggle, saved searches, export)
-- [ ] Event Detail page (overview, revision timeline, products, relationships, provenance)
-- [ ] Analytics page (charts with accessible table fallbacks)
-- [ ] Alerts page (rule CRUD with preview, notification feed)
-- [ ] Research Lab page (snapshots, manifests, downloads)
-- [ ] Operations and System Status pages
-- [ ] Accounts pages (sign up, log in, log out) and About Data & Methodology
+- [x] Design system: tokens, typography, light/dark themes, component states
+- [x] Base layout: navigation, freshness indicator, attribution, safety disclaimer, error pages
+- [x] Dashboard page
+- [x] Live Map page (clusters, viewport loading, side panel, legend)
+- [x] Explorer page (filters, sortable table, map toggle, saved searches, export)
+- [x] Event Detail page (overview, revision timeline, products, relationships, provenance)
+- [x] Analytics page (charts with accessible table fallbacks)
+- [x] Alerts page (rule CRUD with preview, notification feed)
+- [x] Research Lab page (snapshots, manifests, downloads)
+- [x] Operations and System Status pages
+- [x] Accounts pages (sign up, log in, log out) and About Data & Methodology
 
 ## L6 Hardening
 - [ ] Index benchmarks before/after at 500, 10k and 100k records

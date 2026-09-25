@@ -188,3 +188,31 @@ audited through Django's auth signals. Session auth enforces CSRF for all unsafe
 **Alert delivery.** Matches are evaluated inside the ingestion transaction by the
 `AlertRuleObserver`; live-feed only, events < 24 h old, created after the rule, one match per
 (rule, event), cooldown-suppressed repeats recorded with `notify: false`.
+
+## 9. User interface (L5)
+
+Server-rendered page shells with API-driven islands (ADR-011); design tokens, components, UI
+states and the accessibility checklist are in [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md).
+
+| Page | URL | Access | Server-side | Islands (`static/qw/js/`) → API |
+|---|---|---|---|---|
+| Dashboard | `/` | public | shell | `dashboard.js` → `analytics/summary`, `analytics/timeseries`, `events`, `events/map` |
+| Live Map | `/map/` | public | shell, filters | `map.js` → `events/map` (viewport bbox), `events` (side panel), `events/{id}` |
+| Explorer | `/explorer/` | public (save/export: signed in) | GET filter form (works without JS) | `explorer.js` → `events`, `events/map`, `saved-searches`, `research/snapshots` |
+| Event Detail | `/events/{id}/` | public | overview (404 / canonical redirect) | `event.js` → `events/{id}/revisions`, `/relationships`, `/provenance`, `/enrich` |
+| Analytics | `/analytics/` | public | shell | `analytics.js` → `analytics/*` |
+| Alerts | `/alerts/` | signed in | shell | `alerts.js` → `alert-rules*`, `alerts/matches*` |
+| Research Lab | `/research/` | signed in | shell | `research.js` → `research/snapshots*` |
+| System Status | `/status/` | public | thresholds from settings | `status.js` → `system/freshness`, `system/health` |
+| Operations | `/operations/` | staff (403 otherwise) | shell | `operations.js` → `operations/*` |
+| About | `/about/` | public | static methodology text | — |
+| Accounts | `/accounts/login/`, `signup/`, `logout/` (POST) | public | Django auth forms; lockout message from `accounts.security` | — |
+
+Every page carries the freshness badge (polls `system/freshness`), the USGS attribution and the
+"no prediction / not an emergency warning" statement. `apps/web/views.py` holds no business logic;
+Event Detail calls `EventQueryService` directly (same service as the API).
+
+**Security.** Strict CSP (only the theme bootstrap is inline, with a nonce); the runtime inserts
+API data with `textContent` only; upstream URLs are rendered as links only when they are
+`https://*.usgs.gov` (`earthquakes.services.safe_usgs_url`); logout is POST-only; the login page
+explains a lockout without revealing whether the account exists.

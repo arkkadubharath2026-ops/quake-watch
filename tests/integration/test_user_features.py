@@ -21,7 +21,9 @@ from django.test import Client, RequestFactory
 
 from apps.accounts import security
 from apps.core.arango import schema as s
+from apps.core.arango.schema import SCHEMA_VERSION as DATABASE_SCHEMA_VERSION
 from apps.core.resilience import CircuitBreaker
+from apps.earthquakes.domain import SCHEMA_VERSION as EVENT_DOCUMENT_VERSION
 from apps.ingestion.adapters.http import ResilientHttpClient
 from apps.ingestion.adapters.usgs import UsgsClient
 from apps.ingestion.normalizer import NormalizedRecord, normalize_feature, parse_feed
@@ -165,6 +167,9 @@ class TestResearchSnapshots:
         assert manifest["row_count"] == len(rows) == snapshot["row_count"]
         assert manifest["query_definition"]["filters"]["min_magnitude"] == 2.0
         assert manifest["application_version"]
+        # the database schema and the event document format are versioned separately
+        assert manifest["database_schema_version"] == DATABASE_SCHEMA_VERSION
+        assert manifest["event_document_version"] == EVENT_DOCUMENT_VERSION
         assert manifest["source"] == "USGS"
         assert all(float(r["magnitude"]) >= 2 for r in rows)
         assert [c["name"] for c in manifest["columns"]] == list(m.COLUMN_NAMES)

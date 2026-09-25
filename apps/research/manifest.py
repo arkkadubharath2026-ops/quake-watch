@@ -115,7 +115,8 @@ def build_manifest(
     row_count: int,
     content_hash: str,
     application_version: str,
-    schema_version: int,
+    database_schema_version: int,
+    event_document_version: int,
     revision_policy_version: int,
     source_requests: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -132,7 +133,8 @@ def build_manifest(
         "content_sha256_definition": "SHA-256 of the rows as JSON Lines (sorted keys, compact "
         "separators, UTF-8, one row per line, rows ordered by occurred_at then event_key)",
         "export_schema_version": EXPORT_SCHEMA_VERSION,
-        "database_schema_version": schema_version,
+        "database_schema_version": database_schema_version,
+        "event_document_version": event_document_version,
         "revision_policy_version": revision_policy_version,
         "application_version": application_version,
         "columns": [{"name": n, "provenance": p} for n, p in EXPORT_COLUMNS],

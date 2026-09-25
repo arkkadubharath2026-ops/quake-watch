@@ -8,6 +8,7 @@ QuakeWatch, with method) and **operational** metadata, so every value shown carr
 from __future__ import annotations
 
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from apps.core.clock import now_iso
 from apps.core.errors import Conflict, NotFound, ValidationFailed
@@ -45,6 +46,18 @@ class EventReader(Protocol):
     def map_clusters(self, f: EventFilter) -> tuple[list[dict[str, Any]], float]: ...
 
 
+def safe_usgs_url(value: Any) -> str | None:
+    """Only https links on usgs.gov hosts are rendered as links. The stored source value is kept
+    unchanged; this guards pages against a tampered upstream URL (e.g. a ``javascript:`` scheme)."""
+    if not isinstance(value, str):
+        return None
+    parts = urlsplit(value)
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or not (host == "usgs.gov" or host.endswith(".usgs.gov")):
+        return None
+    return value
+
+
 def present_event(doc: dict[str, Any]) -> dict[str, Any]:
     source = {name: doc.get(name) for name in SOURCE_STATE_FIELDS}
     products = set(doc.get("products") or [])
@@ -66,7 +79,7 @@ def present_event(doc: dict[str, Any]) -> dict[str, Any]:
             for code, label in KEY_PRODUCTS.items()
         ],
         "enrichment": doc.get("enrichment"),
-        "links": {"usgs_event_page": doc.get("event_page_url")},
+        "links": {"usgs_event_page": safe_usgs_url(doc.get("event_page_url"))},
     }
 
 

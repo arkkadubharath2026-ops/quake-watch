@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Access denied{% endblock %}
+{% block content %}
+<div class="qw-state my-5" data-kind="error" role="alert">
+  <i class="bi bi-lock" aria-hidden="true"></i>
+  <h1>Access denied</h1>
+  <p>{% if exception and "403" == "403" %}{{ exception }}{% else %}You don't have permission to view this page.{% endif %}</p>
+  <p class="d-flex gap-2 justify-content-center">
+    <a class="btn btn-primary" href="{% url 'pages:dashboard' %}">Go to the dashboard</a>
+    <a class="btn btn-outline-secondary" href="{% url 'pages:explorer' %}">Search events</a>
+  </p>
+</div>
+{% endblock %}

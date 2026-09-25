@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -14,6 +14,7 @@ from arango.database import StandardDatabase
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import Client
+from freezegun import freeze_time
 
 from apps.core.arango import catalog
 from apps.core.arango import schema as s
@@ -320,6 +321,33 @@ class TestAnalytics:
                 expected[label] = expected.get(label, 0) + 1
         assert expected, "fixture must contain significant events"
         assert {w["week"]: w["count"] for w in data["significant_by_week"]} == expected
+
+    def test_time_to_reviewed_uses_usgs_clock_not_polling_time(
+        self, client: Client, arango_db: StandardDatabase
+    ) -> None:
+        """A polling gap (reviewed version observed 6 h late) must not inflate the metric."""
+        feed = json.loads(load_fixture("usgs/all_day.geojson"))
+        raw = copy.deepcopy(
+            next(f for f in feed["features"] if f["properties"]["status"] == "automatic")
+        )
+        updated_ms = raw["properties"]["updated"]
+        first_seen = datetime.fromtimestamp(updated_ms / 1000, UTC) + timedelta(minutes=1)
+        with freeze_time(first_seen):
+            IngestionPipeline(arango_db).ingest([normalize_feature(raw)])  # type: ignore[list-item]
+        raw["properties"].update(status="reviewed", updated=updated_ms + 2 * 3600 * 1000)
+        with freeze_time(first_seen + timedelta(hours=6)):
+            IngestionPipeline(arango_db).ingest([normalize_feature(raw)])  # type: ignore[list-item]
+        cache.clear()
+
+        # no frozen clock for the request: DRF throttling needs a real timer
+        ttr = body(client.get(f"{API}/analytics/revisions", {"days": "3650"}))["time_to_reviewed"]
+        assert ttr["count"] == 1
+        assert ttr["first_seen_p50_hours"] == pytest.approx(2 - 1 / 60, abs=1e-6)
+        origin = datetime.fromtimestamp(raw["properties"]["time"] / 1000, UTC)
+        expected_origin_h = first_seen + timedelta(hours=2) - timedelta(minutes=1) - origin
+        assert ttr["origin_p50_hours"] == pytest.approx(
+            expected_origin_h.total_seconds() / 3600, abs=1e-6
+        )
 
     @pytest.mark.parametrize("days", ["0", "abc", "99999"])
     def test_invalid_window(self, client: Client, api_db: StandardDatabase, days: str) -> None:

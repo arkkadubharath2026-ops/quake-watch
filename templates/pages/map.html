@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Live Map{% endblock %}
+{% block page_id %}map{% endblock %}
+{% block vendor_css %}{% include "partials/map_assets_css.html" %}{% endblock %}
+{% block content %}
+<div class="qw-page-header">
+  <div>
+    <h1>Live map</h1>
+    <p>Pan and zoom to load the events in view. Dense areas are grouped; zoom in to see individual events.</p>
+  </div>
+  <a class="qw-freshness text-reset" data-qw-freshness data-status="unknown" href="{% url 'pages:status' %}">
+    <span class="qw-dot" aria-hidden="true"></span><span data-label>Checking data freshness…</span>
+  </a>
+</div>
+
+<form id="map-filters" class="qw-card qw-filters mb-3" aria-label="Map filters">
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="f-window">Time window</label>
+      <select class="form-select" id="f-window" name="window">
+        <option value="1h">Last hour</option>
+        <option value="24h" selected>Last 24 hours</option>
+        <option value="7d">Last 7 days</option>
+        <option value="30d">Last 30 days</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="f-mag">Minimum magnitude</label>
+      <select class="form-select" id="f-mag" name="min_magnitude">
+        <option value="">Any</option>
+        <option value="1">1.0+</option>
+        <option value="2.5">2.5+</option>
+        <option value="4.5">4.5+</option>
+        <option value="6">6.0+</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="f-status">Review status</label>
+      <select class="form-select" id="f-status" name="status">
+        <option value="">Any</option>
+        <option value="reviewed">Reviewed</option>
+        <option value="automatic">Automatic</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="form-check form-switch mb-2">
+        <input class="form-check-input" type="checkbox" role="switch" id="f-refresh" checked>
+        <label class="form-check-label" for="f-refresh">Auto-refresh every 2 minutes</label>
+      </div>
+    </div>
+  </div>
+</form>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div id="live-map" class="qw-map" aria-label="Earthquake map. The list next to the map lists the strongest events in the current view."></div>
+    <p id="map-status" class="small mt-2 mb-0" role="status" aria-live="polite"></p>
+  </div>
+  <aside class="col-lg-4" aria-labelledby="panel-heading">
+    <div class="qw-card qw-side-panel">
+      <div id="selected" hidden>
+        <h2 class="h3">Selected event</h2>
+        <div id="selected-body"></div>
+        <hr>
+      </div>
+      <h2 class="h3" id="panel-heading">Strongest in view</h2>
+      <div id="in-view"></div>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}
+{% include "partials/map_assets_js.html" %}
+<script src="{% static 'qw/js/map.js' %}"></script>
+{% endblock %}

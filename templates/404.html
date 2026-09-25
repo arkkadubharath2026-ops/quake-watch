@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Page not found{% endblock %}
+{% block content %}
+<div class="qw-state my-5" data-kind="error" role="alert">
+  <i class="bi bi-question-circle" aria-hidden="true"></i>
+  <h1>Page not found</h1>
+  <p>{% if exception and "404" == "403" %}{{ exception }}{% else %}We couldn't find that page or event. It may have been merged into another event or never existed.{% endif %}</p>
+  <p class="d-flex gap-2 justify-content-center">
+    <a class="btn btn-primary" href="{% url 'pages:dashboard' %}">Go to the dashboard</a>
+    <a class="btn btn-outline-secondary" href="{% url 'pages:explorer' %}">Search events</a>
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Dashboard{% endblock %}
+{% block page_id %}dashboard{% endblock %}
+{% block vendor_css %}{% include "partials/map_assets_css.html" %}{% endblock %}
+{% block content %}
+<div class="qw-page-header">
+  <div>
+    <h1>What is happening now</h1>
+    <p>Recent global seismic activity from the USGS real-time feeds, updated every few minutes.</p>
+  </div>
+  <a class="btn btn-outline-primary" href="{% url 'pages:map' %}"><i class="bi bi-map" aria-hidden="true"></i> Open live map</a>
+</div>
+
+<section aria-labelledby="summary-heading">
+  <h2 id="summary-heading" class="visually-hidden">Summary</h2>
+  <div id="summary" class="row g-3" aria-live="polite"></div>
+</section>
+
+<div class="row g-3 mt-1">
+  <section class="col-lg-7" aria-labelledby="map-heading">
+    <div class="qw-card">
+      <h2 id="map-heading">Last 24 hours on the map</h2>
+      <div id="preview-map" class="qw-map qw-map-sm" aria-label="Map of earthquakes in the last 24 hours. The list of recent events on this page contains the same information."></div>
+      <div id="preview-map-state" class="small mt-2"></div>
+    </div>
+  </section>
+  <section class="col-lg-5" aria-labelledby="recent-heading">
+    <div class="qw-card">
+      <h2 id="recent-heading">Most recent events</h2>
+      <div id="recent"></div>
+      <a class="small" href="{% url 'pages:explorer' %}">Explore all events →</a>
+    </div>
+  </section>
+</div>
+
+<div class="row g-3 mt-1">
+  <section class="col-lg-7" aria-labelledby="activity-heading">
+    <div class="qw-card">
+      <h2 id="activity-heading">Daily activity by magnitude (last 14 days)</h2>
+      <div id="activity"></div>
+      <p class="small text-body-secondary mt-2 mb-0">Historical backfill imports M2.5+ events; smaller events
+        appear only from the start of live monitoring, so the M&lt;2.5 band is not comparable across days.</p>
+    </div>
+  </section>
+  <section class="col-lg-5" aria-labelledby="significant-heading">
+    <div class="qw-card">
+      <h2 id="significant-heading">Significant events (last 7 days)</h2>
+      <p class="small text-body-secondary">Significance ≥ 600, a PAGER alert level, or a tsunami flag (USGS values).</p>
+      <div id="significant"></div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+{% include "partials/map_assets_js.html" %}
+<script src="{% static 'vendor/chart.js/chart.umd.min.js' %}"></script>
+<script src="{% static 'qw/js/charts.js' %}"></script>
+<script src="{% static 'qw/js/dashboard.js' %}"></script>
+{% endblock %}

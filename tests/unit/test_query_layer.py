@@ -10,7 +10,7 @@ from apps.core.errors import ValidationFailed
 from apps.core.resilience import BreakerState
 from apps.earthquakes.filters import EventFilter
 from apps.earthquakes.repository import compile_filter, search_aql
-from apps.earthquakes.services import present_event
+from apps.earthquakes.services import present_event, safe_usgs_url
 from apps.operations.freshness import FreshnessService, classify
 
 
@@ -152,3 +152,33 @@ class TestPresentation:
 @pytest.mark.parametrize(("raw", "expected"), [(None, 30), ("", 30), ("7", 7), ("3660", 3660)])
 def test_parse_days(raw: str | None, expected: int) -> None:
     assert parse_days(raw) == expected
+
+
+class TestSafeUsgsUrl:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "https://earthquake.usgs.gov/earthquakes/eventpage/us7000abcd",
+            "https://usgs.gov/x",
+        ],
+    )
+    def test_accepts_https_usgs_hosts(self, value: str) -> None:
+        assert safe_usgs_url(value) == value
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "javascript:alert(1)",
+            "JAVASCRIPT:alert(1)",
+            "http://earthquake.usgs.gov/insecure",
+            "https://earthquake.usgs.gov.evil.example/x",
+            "https://evilusgs.gov/x",
+            "//earthquake.usgs.gov/x",
+            "data:text/html,<script>alert(1)</script>",
+            "",
+            None,
+            42,
+        ],
+    )
+    def test_rejects_everything_else(self, value: object) -> None:
+        assert safe_usgs_url(value) is None

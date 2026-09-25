@@ -1,0 +1,17 @@
+{# Accessible Bootstrap field: label↔input, required marker, help + error linked via aria-describedby. #}
+{% with id=field.id_for_label %}
+<div class="mb-3">
+  <label class="form-label" for="{{ id }}">{{ field.label }}{% if field.field.required %} <span class="qw-required" aria-hidden="true">*</span>{% endif %}</label>
+  <input type="{{ field.field.widget.input_type }}" name="{{ field.html_name }}" id="{{ id }}"
+         class="form-control{% if field.errors %} is-invalid{% endif %}"
+         {% if field.value and field.field.widget.input_type != "password" %}value="{{ field.value }}"{% endif %}
+         {% if field.field.required %}required aria-required="true"{% endif %}
+         {% if field.field.widget.attrs.autocomplete %}autocomplete="{{ field.field.widget.attrs.autocomplete }}"{% endif %}
+         {% if field.field.widget.attrs.autofocus %}autofocus{% endif %}
+         {% if field.field.max_length %}maxlength="{{ field.field.max_length }}"{% endif %}
+         {% if field.errors %}aria-invalid="true"{% endif %}
+         {% if field.errors or field.help_text %}aria-describedby="{% if field.errors %}{{ id }}-error {% endif %}{% if field.help_text %}{{ id }}-help{% endif %}"{% endif %}>
+  {% if field.errors %}<div class="invalid-feedback" id="{{ id }}-error">{{ field.errors|join:" " }}</div>{% endif %}
+  {% if field.help_text %}<div class="form-text" id="{{ id }}-help">{{ field.help_text|safe }}</div>{% endif %}
+</div>
+{% endwith %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}System Status{% endblock %}
+{% block page_id %}status{% endblock %}
+{% block content %}
+<div class="qw-page-header">
+  <div>
+    <h1>System status</h1>
+    <p>Whether QuakeWatch is running and how current its copy of the USGS data is.</p>
+  </div>
+</div>
+<div class="row g-3">
+  <section class="col-lg-6" aria-labelledby="fresh-h">
+    <div class="qw-card">
+      <h2 class="h3" id="fresh-h">Data freshness</h2>
+      <div id="freshness"></div>
+    </div>
+  </section>
+  <section class="col-lg-6" aria-labelledby="health-h">
+    <div class="qw-card">
+      <h2 class="h3" id="health-h">Services</h2>
+      <div id="health"></div>
+    </div>
+  </section>
+</div>
+<section class="qw-card mt-3" aria-labelledby="how-h">
+  <h2 class="h3" id="how-h">How to read this</h2>
+  <ul class="small mb-0">
+    <li><strong>Live</strong>: the USGS feed was synchronised successfully within the last {{ degraded_minutes }} minutes.</li>
+    <li><strong>Degraded</strong>: no successful sync for {{ degraded_minutes }}–{{ stale_minutes }} minutes; recent events may be missing.</li>
+    <li><strong>Stale</strong>: no successful sync for over {{ stale_minutes }} minutes; treat the data as out of date and check
+      <a href="https://earthquake.usgs.gov/earthquakes/map/" rel="noopener noreferrer">the USGS map</a> directly.</li>
+    <li>The <strong>circuit breaker</strong> pauses requests to USGS after repeated failures, then retries automatically.</li>
+  </ul>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{% static 'qw/js/status.js' %}"></script>{% endblock %}

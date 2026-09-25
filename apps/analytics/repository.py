@@ -267,20 +267,27 @@ MAGNITUDE_CHANGES = _q(
 
 TIME_TO_REVIEWED = _q(
     "analytics_time_to_reviewed",
-    "Hours from first observation to 'reviewed' status, for events first seen live "
-    "(README Q9; percentiles via COLLECT INTO + PERCENTILE).",
+    "Hours until USGS published an event as 'reviewed' (README Q9, RQ1). The review moment is the "
+    "USGS update time of the first reviewed version, so gaps in QuakeWatch polling cannot inflate "
+    "it. Reported from origin time (USGS clocks only) and from QuakeWatch's first observation.",
     """
     FOR r IN event_revisions
       FILTER "status" IN r.changed_fields[*] AND r.after.status == "reviewed"
       FILTER r.observed_at >= @since
       LET created = DOCUMENT("event_revisions", CONCAT(r.event_key, "_000001"))
       FILTER created != null
-      LET hours = DATE_DIFF(created.observed_at, r.observed_at, "h", true)
-      COLLECT AGGREGATE n = LENGTH(1), avg_h = AVERAGE(hours), max_h = MAX(hours)
-        INTO values = hours
-      RETURN {count: n, avg_hours: avg_h, max_hours: max_h,
-              p50_hours: n == 0 ? null : PERCENTILE(values, 50),
-              p90_hours: n == 0 ? null : PERCENTILE(values, 90)}
+      LET from_origin = DATE_DIFF(r.state.occurred_at, r.source_updated_at, "h", true)
+      LET from_first_seen = MAX([0, DATE_DIFF(created.observed_at, r.source_updated_at, "h", true)])
+      COLLECT AGGREGATE n = LENGTH(1), max_origin = MAX(from_origin)
+        INTO values = {origin: from_origin, seen: from_first_seen}
+      LET origin = values[*].origin
+      LET seen = values[*].seen
+      RETURN {count: n,
+              origin_p50_hours: n == 0 ? null : PERCENTILE(origin, 50),
+              origin_p90_hours: n == 0 ? null : PERCENTILE(origin, 90),
+              origin_max_hours: max_origin,
+              first_seen_p50_hours: n == 0 ? null : PERCENTILE(seen, 50),
+              first_seen_p90_hours: n == 0 ? null : PERCENTILE(seen, 90)}
     """,
     {"since": SINCE},
     ("qw_revisions_changed_fields",),

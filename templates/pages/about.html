@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}About the data{% endblock %}
+{% block page_id %}about{% endblock %}
+{% block content %}
+<div class="qw-page-header">
+  <div>
+    <h1>About the data &amp; methodology</h1>
+    <p>What QuakeWatch shows, where it comes from, and what it deliberately does not do.</p>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <article class="qw-card">
+      <h2 id="safety">Safety first</h2>
+      <ul>
+        <li>QuakeWatch <strong>does not predict earthquakes</strong>. No one can reliably predict them.</li>
+        <li>Alerts in QuakeWatch are <strong>application notifications, not emergency warnings</strong>. They may be delayed
+          by USGS publication and by polling.</li>
+        <li>Official agencies remain authoritative. Follow your national or local emergency guidance; in supported regions
+          ShakeAlert provides real earthquake early warning.</li>
+        <li>The USGS tsunami flag means tsunami information may exist for an event — it is not a tsunami warning.</li>
+      </ul>
+
+      <h2 id="source" class="mt-4">Data source</h2>
+      <p>{{ DATA_ATTRIBUTION }} QuakeWatch reads the public USGS real-time GeoJSON summary feeds every few minutes and
+        imports history through the USGS FDSN event catalogue (magnitude 2.5 and above). Scientific product details
+        (ShakeMap, PAGER, DYFI and others) are fetched from the USGS detail feed for important events or on request.
+        QuakeWatch surfaces these products; it does not produce competing impact estimates.</p>
+
+      <h2 id="revisions" class="mt-4">Revision tracking</h2>
+      <p>USGS updates events after they are first published: magnitudes are recalculated, locations refined, and
+        automatic solutions are reviewed by analysts. QuakeWatch keeps every meaningful change as an immutable revision.
+        A new revision is stored only when a tracked field changes by more than its tolerance (for example 0.005 in
+        magnitude, 0.1 km in depth, about 111 m in location), so floating-point noise is not recorded as a change. The
+        policy is versioned and every revision records the policy version that produced it.</p>
+
+      <h2 id="derived" class="mt-4">Source values vs derived values</h2>
+      <p>Values from USGS are stored unchanged. Values QuakeWatch computes — the region name (taken from the text after the
+        last comma of the USGS place description), first-observation latency and analytics — are stored separately,
+        labelled as derived, and never overwrite source values.</p>
+
+      <h2 id="freshness" class="mt-4">Freshness and gaps</h2>
+      <p>Every page shows how recently the live feed was synchronised. If QuakeWatch is not polling (maintenance,
+        network or USGS outages), events that occur during the gap are picked up by later syncs, but timing statistics
+        that depend on when QuakeWatch observed an event can be affected. Where possible, metrics use USGS timestamps
+        instead, and each metric states its definition. See <a href="{% url 'pages:status' %}">System status</a>.</p>
+
+      <h2 id="coverage" class="mt-4">Coverage</h2>
+      <p>The historical import includes magnitude 2.5 and above. Smaller events are present only from the start of live
+        monitoring, which is dense in regions with local seismic networks (for example California and Alaska) and sparse
+        elsewhere. Counts describe QuakeWatch's copy of the catalogue, not the complete global record.</p>
+
+      <h2 id="research" class="mt-4">Reproducible research datasets</h2>
+      <p>A research snapshot freezes the events matching a query at their current revisions, computes a SHA-256 checksum
+        over the rows and stores a manifest with the query, application and schema versions and the USGS requests that
+        produced the data. Re-downloading a snapshot always returns identical rows.</p>
+    </article>
+  </div>
+  <div class="col-lg-4">
+    <aside class="qw-card" aria-labelledby="links-h">
+      <h2 class="h3" id="links-h">Official sources</h2>
+      <ul class="small mb-0">
+        <li><a href="https://earthquake.usgs.gov/" rel="noopener noreferrer">USGS Earthquake Hazards Program</a></li>
+        <li><a href="https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php" rel="noopener noreferrer">USGS GeoJSON feeds</a></li>
+        <li><a href="https://earthquake.usgs.gov/data/shakemap/" rel="noopener noreferrer">ShakeMap</a> and
+          <a href="https://earthquake.usgs.gov/data/pager/" rel="noopener noreferrer">PAGER</a></li>
+        <li><a href="https://www.shakealert.org/" rel="noopener noreferrer">ShakeAlert early warning</a></li>
+        <li><a href="https://www.emsc-csem.org/" rel="noopener noreferrer">EMSC</a></li>
+      </ul>
+    </aside>
+  </div>
+</div>
+{% endblock %}

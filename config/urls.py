@@ -8,4 +8,6 @@ urlpatterns = [
     path("health/ready", health.ready, name="health-ready"),
     path("api/v1/", include("config.api_urls")),
     path("django-admin/", admin.site.urls),
+    path("accounts/", include("apps.accounts.urls")),
+    path("", include("apps.web.urls")),
 ]

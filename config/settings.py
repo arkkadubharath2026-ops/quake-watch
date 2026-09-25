@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "apps.research",
     "apps.operations",
     "apps.accounts",
+    "apps.web",
 ]
 
 MIDDLEWARE = [

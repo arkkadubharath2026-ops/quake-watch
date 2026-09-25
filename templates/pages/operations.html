@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Operations{% endblock %}
+{% block page_id %}operations{% endblock %}
+{% block content %}
+<div class="qw-page-header">
+  <div>
+    <h1>Data operations</h1>
+    <p>Ingestion health, failures, database diagnostics and audited admin actions. Staff only.</p>
+  </div>
+</div>
+
+<div id="overview" class="mb-3"></div>
+
+<div class="row g-3">
+  <section class="col-lg-8" aria-labelledby="runs-h">
+    <div class="qw-card">
+      <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-2">
+        <h2 class="h3 mb-0" id="runs-h">Ingestion runs</h2>
+        <form id="runs-filter" class="d-flex gap-2" aria-label="Filter runs">
+          <div><label class="visually-hidden" for="run-kind">Kind</label>
+            <select class="form-select form-select-sm" id="run-kind" name="kind"><option value="">All kinds</option><option value="feed_sync">Feed sync</option><option value="backfill_window">Backfill window</option><option value="detail_enrichment">Detail enrichment</option></select></div>
+          <div><label class="visually-hidden" for="run-status">Status</label>
+            <select class="form-select form-select-sm" id="run-status" name="status"><option value="">All statuses</option><option value="succeeded">Succeeded</option><option value="partial">Partial</option><option value="failed">Failed</option><option value="running">Running</option><option value="skipped">Skipped</option><option value="split">Split</option><option value="abandoned">Abandoned</option></select></div>
+        </form>
+      </div>
+      <div id="runs"></div>
+      <nav aria-label="Run pages" id="runs-pager" class="mt-2"></nav>
+    </div>
+  </section>
+  <section class="col-lg-4" aria-labelledby="actions-h">
+    <div class="qw-card">
+      <h2 class="h3" id="actions-h">Actions</h2>
+      <p class="small text-body-secondary">Every action is recorded in the audit log, including failures.</p>
+      <button type="button" class="btn btn-outline-primary w-100 mb-3" id="sync-now"><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Sync the live feed now</button>
+      <form id="backfill-form" novalidate>
+        <h3 class="h6">Historical backfill</h3>
+        <div class="row g-1 mb-2">
+          <div class="col-6"><label class="form-label" for="b-start">Start (UTC) <span class="qw-required" aria-hidden="true">*</span></label><input class="form-control form-control-sm" type="date" id="b-start" name="start" required aria-required="true"></div>
+          <div class="col-6"><label class="form-label" for="b-end">End (UTC) <span class="qw-required" aria-hidden="true">*</span></label><input class="form-control form-control-sm" type="date" id="b-end" name="end" required aria-required="true"></div>
+        </div>
+        <div class="row g-1 mb-2">
+          <div class="col-6"><label class="form-label" for="b-mag">Min magnitude</label><input class="form-control form-control-sm" type="number" step="0.1" id="b-mag" name="min_magnitude" value="2.5"></div>
+          <div class="col-6"><label class="form-label" for="b-window">Window (days)</label><input class="form-control form-control-sm" type="number" min="1" id="b-window" name="window_days" value="7"></div>
+        </div>
+        <button class="btn btn-primary btn-sm w-100" type="submit">Queue backfill</button>
+      </form>
+      <div id="action-status" class="mt-2" aria-live="polite"></div>
+      <h3 class="h6 mt-3">Backfill jobs</h3>
+      <div id="jobs"></div>
+    </div>
+  </section>
+</div>
+
+<div class="row g-3 mt-1">
+  <section class="col-lg-6" aria-labelledby="dl-h"><div class="qw-card"><h2 class="h3" id="dl-h">Dead letters</h2><div id="dead-letters"></div></div></section>
+  <section class="col-lg-6" aria-labelledby="audit-h"><div class="qw-card"><h2 class="h3" id="audit-h">Audit log</h2><div id="audit"></div></div></section>
+</div>
+
+<section class="qw-card mt-3" aria-labelledby="diag-h">
+  <h2 class="h3" id="diag-h">Query diagnostics</h2>
+  <p class="small text-body-secondary">Every named AQL query is EXPLAINed against the live database; a query that stops using its expected index is flagged.</p>
+  <div id="diagnostics"></div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{% static 'qw/js/operations.js' %}"></script>{% endblock %}

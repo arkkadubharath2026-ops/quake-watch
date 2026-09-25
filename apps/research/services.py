@@ -7,9 +7,10 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
+from apps.core.arango.schema import SCHEMA_VERSION as DATABASE_SCHEMA_VERSION
 from apps.core.clock import now_iso
 from apps.core.errors import Conflict, NotFound, QuakeWatchError, ValidationFailed
-from apps.earthquakes.domain import SCHEMA_VERSION
+from apps.earthquakes.domain import SCHEMA_VERSION as EVENT_DOCUMENT_VERSION
 from apps.earthquakes.filters import EventFilter
 from apps.ingestion.revision_policy import POLICY_VERSION
 from apps.research import manifest as m
@@ -88,7 +89,8 @@ class ResearchService:
             row_count=len(rows),
             content_hash=content_hash,
             application_version=self.application_version,
-            schema_version=SCHEMA_VERSION,
+            database_schema_version=DATABASE_SCHEMA_VERSION,
+            event_document_version=EVENT_DOCUMENT_VERSION,
             revision_policy_version=POLICY_VERSION,
             source_requests=self.store.source_requests(run_ids),
         )

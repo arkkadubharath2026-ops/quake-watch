@@ -38,6 +38,12 @@ def parse_days(raw: str | None, *, default: int = 30) -> int:
     return days
 
 
+TIME_TO_REVIEWED_DEFINITION = (
+    "Review time = USGS update timestamp of the first version with status 'reviewed', so gaps in "
+    "QuakeWatch polling do not inflate it. Only events QuakeWatch first saw as 'automatic' count."
+)
+
+
 class AnalyticsService:
     def __init__(self, reader: AnalyticsReader) -> None:
         self.reader = reader
@@ -114,7 +120,10 @@ class AnalyticsService:
                 "magnitude_changes": self.reader.run(
                     q.MAGNITUDE_CHANGES, {"threshold": magnitude_threshold, "limit": 20}
                 ),
-                "time_to_reviewed": self.reader.first(q.TIME_TO_REVIEWED, {"since": since}),
+                "time_to_reviewed": {
+                    **(self.reader.first(q.TIME_TO_REVIEWED, {"since": since}) or {"count": 0}),
+                    "definition": TIME_TO_REVIEWED_DEFINITION,
+                },
             }
 
         return dict(self._cached(f"revisions:{days}:{magnitude_threshold}", compute))

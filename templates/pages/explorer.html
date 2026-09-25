@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Explorer{% endblock %}
+{% block page_id %}explorer{% endblock %}
+{% block vendor_css %}{% include "partials/map_assets_css.html" %}{% endblock %}
+{% block content %}
+<div class="qw-page-header">
+  <div>
+    <h1>Earthquake explorer</h1>
+    <p>Filter the catalogue, sort the results, then save the query or freeze it as a research snapshot.</p>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-3">
+    {# A plain GET form: works without JavaScript; the script enhances it with in-page updates. #}
+    <form id="filters" class="qw-card qw-filters" method="get" action="{% url 'pages:explorer' %}" aria-label="Event filters" novalidate>
+      <h2 class="h3">Filters</h2>
+      <div class="mb-2">
+        <label class="form-label" for="f-q">Place contains</label>
+        <input class="form-control" type="search" id="f-q" name="q" maxlength="100" autocomplete="off">
+      </div>
+      <fieldset class="mb-2">
+        <legend class="form-label mb-1">Origin date (UTC)</legend>
+        <div class="row g-1">
+          <div class="col-6"><label class="visually-hidden" for="f-start">From</label><input class="form-control" type="date" id="f-start" name="start" aria-describedby="date-help"></div>
+          <div class="col-6"><label class="visually-hidden" for="f-end">To</label><input class="form-control" type="date" id="f-end" name="end" aria-describedby="date-help"></div>
+        </div>
+        <div class="form-text" id="date-help">From (inclusive) – to (exclusive).</div>
+      </fieldset>
+      <fieldset class="mb-2">
+        <legend class="form-label mb-1">Magnitude</legend>
+        <div class="row g-1">
+          <div class="col-6"><label class="visually-hidden" for="f-minmag">Minimum magnitude</label><input class="form-control" type="number" step="0.1" min="-2" max="11" id="f-minmag" name="min_magnitude" placeholder="min"></div>
+          <div class="col-6"><label class="visually-hidden" for="f-maxmag">Maximum magnitude</label><input class="form-control" type="number" step="0.1" min="-2" max="11" id="f-maxmag" name="max_magnitude" placeholder="max"></div>
+        </div>
+      </fieldset>
+      <fieldset class="mb-2">
+        <legend class="form-label mb-1">Depth (km)</legend>
+        <div class="row g-1">
+          <div class="col-6"><label class="visually-hidden" for="f-mindepth">Minimum depth</label><input class="form-control" type="number" step="1" min="-10" max="1000" id="f-mindepth" name="min_depth_km" placeholder="min"></div>
+          <div class="col-6"><label class="visually-hidden" for="f-maxdepth">Maximum depth</label><input class="form-control" type="number" step="1" min="-10" max="1000" id="f-maxdepth" name="max_depth_km" placeholder="max"></div>
+        </div>
+      </fieldset>
+      <div class="mb-2">
+        <label class="form-label" for="f-status">Review status</label>
+        <select class="form-select" id="f-status" name="status">
+          <option value="">Any</option><option value="reviewed">Reviewed</option><option value="automatic">Automatic</option><option value="deleted">Deleted</option>
+        </select>
+      </div>
+      <div class="mb-2">
+        <label class="form-label" for="f-alert">PAGER alert level</label>
+        <select class="form-select" id="f-alert" name="alert">
+          <option value="">Any</option><option value="none">No alert</option><option value="green">Green</option><option value="yellow">Yellow</option><option value="orange">Orange</option><option value="red">Red</option>
+        </select>
+      </div>
+      <div class="mb-2">
+        <label class="form-label" for="f-tsunami">Tsunami flag</label>
+        <select class="form-select" id="f-tsunami" name="tsunami">
+          <option value="">Any</option><option value="true">Flagged</option><option value="false">Not flagged</option>
+        </select>
+      </div>
+      <details class="mb-2">
+        <summary class="form-label">Network and distance</summary>
+        <div class="mt-2">
+          <label class="form-label" for="f-network">Network codes</label>
+          <input class="form-control" id="f-network" name="network" placeholder="e.g. us,ak" aria-describedby="network-help">
+          <div class="form-text" id="network-help">Comma-separated USGS network codes.</div>
+        </div>
+        <fieldset class="mt-2">
+          <legend class="form-label mb-1">Within a radius of a point</legend>
+          <div class="row g-1">
+            <div class="col-4"><label class="small" for="f-lat">Latitude</label><input class="form-control" type="number" step="any" min="-90" max="90" id="f-lat" name="lat"></div>
+            <div class="col-4"><label class="small" for="f-lon">Longitude</label><input class="form-control" type="number" step="any" min="-180" max="180" id="f-lon" name="lon"></div>
+            <div class="col-4"><label class="small" for="f-radius">Radius (km)</label><input class="form-control" type="number" step="any" min="1" id="f-radius" name="radius_km"></div>
+          </div>
+        </fieldset>
+      </details>
+      <input type="hidden" name="sort" value="occurred_at">
+      <input type="hidden" name="direction" value="desc">
+      <div class="d-flex gap-2 mt-3">
+        <button type="submit" class="btn btn-primary flex-grow-1">Apply filters</button>
+        <a class="btn btn-outline-secondary" href="{% url 'pages:explorer' %}">Reset</a>
+      </div>
+    </form>
+
+    <section class="qw-card mt-3" aria-labelledby="saved-heading">
+      <h2 class="h3" id="saved-heading">Saved searches</h2>
+      {% if user.is_authenticated %}
+        <div id="saved-list"></div>
+      {% else %}
+        <p class="small mb-0"><a href="{% url 'accounts:login' %}?next={{ request.get_full_path|urlencode }}">Log in</a> to save searches.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="col-lg-9">
+    <div class="qw-card">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+        <div>
+          <h2 class="h3 mb-1">Results</h2>
+          <p class="small mb-0" id="summary" role="status" aria-live="polite"></p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <div class="btn-group btn-group-sm" role="group" aria-label="Result view">
+            <button type="button" class="btn btn-outline-secondary active" data-view="table" aria-pressed="true"><i class="bi bi-table" aria-hidden="true"></i> Table</button>
+            <button type="button" class="btn btn-outline-secondary" data-view="map" aria-pressed="false"><i class="bi bi-map" aria-hidden="true"></i> Map</button>
+          </div>
+          {% if user.is_authenticated %}
+            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#save-panel" aria-expanded="false" aria-controls="save-panel"><i class="bi bi-bookmark-plus" aria-hidden="true"></i> Save search</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#snapshot-panel" aria-expanded="false" aria-controls="snapshot-panel"><i class="bi bi-box-arrow-down" aria-hidden="true"></i> Export</button>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if user.is_authenticated %}
+        <form id="save-panel" class="collapse border rounded p-3 mb-3" novalidate>
+          <label class="form-label" for="save-name">Name for this search <span class="qw-required" aria-hidden="true">*</span></label>
+          <div class="input-group">
+            <input class="form-control" id="save-name" name="name" maxlength="120" required aria-required="true">
+            <button class="btn btn-primary" type="submit">Save</button>
+          </div>
+        </form>
+        <form id="snapshot-panel" class="collapse border rounded p-3 mb-3" novalidate>
+          <p class="small mb-2">Exports are frozen <strong>research snapshots</strong>: the matching events are pinned to their current
+            revisions, checksummed and stored with a manifest, so the download is reproducible. Up to 50,000 events.</p>
+          <label class="form-label" for="snap-title">Snapshot title <span class="qw-required" aria-hidden="true">*</span></label>
+          <input class="form-control mb-2" id="snap-title" name="title" maxlength="200" required aria-required="true">
+          <label class="form-label" for="snap-notes">Notes</label>
+          <textarea class="form-control mb-2" id="snap-notes" name="notes" maxlength="4000" rows="2"></textarea>
+          <button class="btn btn-primary" type="submit">Freeze snapshot</button>
+          <div id="snapshot-result" class="mt-2" aria-live="polite"></div>
+        </form>
+      {% endif %}
+
+      <div id="table-view">
+        <div id="results"></div>
+        <nav aria-label="Result pages" id="pager" class="mt-3"></nav>
+      </div>
+      <div id="map-view" hidden>
+        <div id="explorer-map" class="qw-map" aria-label="Map of the filtered events; the table view lists the same events."></div>
+        <p class="small mt-2 mb-0" id="map-status" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% include "partials/map_assets_js.html" %}
+<script src="{% static 'qw/js/explorer.js' %}"></script>
+{% endblock %}

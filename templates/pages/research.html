@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Research Lab{% endblock %}
+{% block page_id %}research{% endblock %}
+{% block content %}
+<div class="qw-page-header">
+  <div>
+    <h1>Research Lab</h1>
+    <p>Freeze a query into a reproducible dataset: rows are pinned to specific event revisions and checksummed, with a manifest describing exactly how they were produced.</p>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <section class="qw-card" aria-labelledby="define-h">
+      <h2 class="h3" id="define-h">Define a dataset</h2>
+      <p class="small text-body-secondary">For more filters (area, network, text), build the query in the
+        <a href="{% url 'pages:explorer' %}">Explorer</a> and use <em>Export</em> there.</p>
+      <form id="snapshot-form" novalidate>
+        <div class="mb-2">
+          <label class="form-label" for="s-title">Title <span class="qw-required" aria-hidden="true">*</span></label>
+          <input class="form-control" id="s-title" name="title" maxlength="200" required aria-required="true">
+        </div>
+        <fieldset class="mb-2">
+          <legend class="form-label mb-1">Origin date range (UTC)</legend>
+          <div class="row g-1">
+            <div class="col-6"><label class="visually-hidden" for="s-start">From</label><input class="form-control" type="date" id="s-start" name="start"></div>
+            <div class="col-6"><label class="visually-hidden" for="s-end">To</label><input class="form-control" type="date" id="s-end" name="end"></div>
+          </div>
+        </fieldset>
+        <div class="row g-1 mb-2">
+          <div class="col-6"><label class="form-label" for="s-minmag">Min magnitude</label><input class="form-control" type="number" step="0.1" min="-2" max="11" id="s-minmag" name="min_magnitude"></div>
+          <div class="col-6"><label class="form-label" for="s-maxmag">Max magnitude</label><input class="form-control" type="number" step="0.1" min="-2" max="11" id="s-maxmag" name="max_magnitude"></div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label" for="s-status">Review status</label>
+          <select class="form-select" id="s-status" name="status"><option value="">Any</option><option value="reviewed">Reviewed</option><option value="automatic">Automatic</option></select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="s-notes">Notes</label>
+          <textarea class="form-control" id="s-notes" name="notes" rows="3" maxlength="4000" aria-describedby="notes-help"></textarea>
+          <div class="form-text" id="notes-help">Research question, intended use, anything a reader of the manifest should know.</div>
+        </div>
+        <button class="btn btn-primary w-100" type="submit">Freeze snapshot</button>
+        <div id="snapshot-status" class="mt-2" aria-live="polite"></div>
+      </form>
+    </section>
+  </div>
+  <div class="col-lg-8">
+    <section class="qw-card" aria-labelledby="snaps-h">
+      <h2 class="h3" id="snaps-h">Your snapshots</h2>
+      <p class="small text-body-secondary">Up to 20 snapshots per account and 50,000 events each. Verify a download with
+        <code>sha256sum</code> against the manifest's content checksum (computed over the rows as JSON Lines — see the manifest).</p>
+      <div id="snapshots"></div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'qw/js/research.js' %}"></script>{% endblock %}
