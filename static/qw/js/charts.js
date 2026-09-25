@@ -22,7 +22,7 @@
   }
 
   function table(columns, rows) {
-    return h("div", { class: "qw-table-wrap" },
+    return window.QW.scrollRegion("Chart data table",
       h("table", { class: "table table-sm qw-table" },
         h("thead", {}, h("tr", {}, columns.map((c, i) => h("th", { scope: "col", class: i ? "num" : null }, c)))),
         h("tbody", {}, rows.map((r) => h("tr", {}, r.map((v, i) => (i ? h("td", { class: "num" }, v) : h("th", { scope: "row" }, v))))))));

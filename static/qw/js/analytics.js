@@ -149,7 +149,7 @@
   async function loadSection(path, ids, render, days) {
     for (const id of ids) window.QW.state($(id), "loading");
     const result = await api(`/analytics/${path}`, { params: { days } });
-    for (const id of ids) $(id).replaceChildren();
+    for (const id of ids) window.QW.fill($(id));
     if (!result.ok) {
       for (const id of ids) errorState($(id), result, () => loadSection(path, ids, render, days));
       return;

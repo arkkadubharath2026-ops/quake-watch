@@ -44,7 +44,7 @@
   function renderSignificant(rows) {
     const el = document.getElementById("significant");
     if (!rows || !rows.length) return state(el, "empty", { message: "No significant events in the last 7 days." });
-    el.replaceChildren(eventList(rows));
+    window.QW.fill(el, eventList(rows));
   }
 
   function isoDaysAgo(days) {

@@ -10,8 +10,9 @@ by `data-bs-theme` (OS preference on first visit, then the toggle, remembered in
 |---|---|---|
 | Typography | `--qw-font-sans`, `--qw-font-mono`, `--qw-text-xs … --qw-text-2xl` | System font stack; 1.2 type scale |
 | Spacing | `--qw-space-1 … --qw-space-8` | 4 px grid |
-| Shape | `--qw-radius`, `--qw-radius-sm`, `--qw-focus-ring` | Focus ring on every `:focus-visible` |
+| Shape | `--qw-radius`, `--qw-radius-sm`, `--qw-focus-ring` | Two-tone focus ring (surface gap + solid brand) on every `:focus-visible` |
 | Surfaces | `--qw-surface`, `--qw-surface-muted`, `--qw-border`, `--qw-text-muted` | Redefined per theme |
+| Brand | `--qw-brand`, `--qw-on-brand` | Links, tabs, pagination, primary/outline buttons (Bootstrap's fixed `#0d6efd`/`#6c757d` miss AA on our surfaces) |
 | Freshness | `--qw-fresh`, `--qw-degraded`, `--qw-stale`, `--qw-unknown` | Always paired with a text label |
 | Magnitude | `--qw-mag-0 … --qw-mag-4`, `--qw-mag-ink-0 … 4` | Ordinal ramp, see below |
 | Charts | `--qw-series-1`, `--qw-series-muted` | Single-series colour; "unknown/other" |
@@ -46,7 +47,7 @@ them with that theme's steps. The colour follows the band, not its position in a
 | Magnitude badge | `QW.magBadge()` / `.qw-mag[data-band]` | Screen-reader prefix "Magnitude" |
 | Freshness badge | `[data-qw-freshness]` | Dot + status word + time; polls every 60 s |
 | Key–value list | `.qw-kv` (`<dl>`) | Source vs derived values in separate lists |
-| Table | `.qw-table` in `.qw-table-wrap` | Numeric columns right-aligned, tabular figures; sortable headers are buttons with `aria-sort` |
+| Table | `.qw-table` in `QW.scrollRegion(label, table)` | Numeric columns right-aligned, tabular figures; sortable headers are buttons with `aria-sort`; the scroll container is a focusable, named region |
 | Chart | `QWCharts.figure()` / `.bar()` | Canvas `role="img"` + summary caption + "Show data table" |
 | Map | `QWMap.create()` / `.eventLayer()` | Legend control; the page always has an equivalent text list |
 | Timeline | `.qw-timeline` | Ordered list, newest first |
@@ -54,7 +55,10 @@ them with that theme's steps. The colour follows the band, not its position in a
 
 ## UI states (every data region)
 
-`QW.load(el, path, render, opts)` renders exactly one of:
+`QW.load(el, path, render, opts)` renders exactly one of the states below. Code that sets a
+loading state by hand must finish with `QW.fill(el, …)` (or `QW.errorState`), which also ends the
+region's `aria-busy` period.
+
 
 | State | Trigger | Presentation |
 |---|---|---|
@@ -75,6 +79,8 @@ Full-page errors use `templates/400|403|404|503.html` (layout + next steps) and 
 
 ## Accessibility checklist (WCAG 2.2 AA)
 
+Audited automatically and manually; findings, fixes and exceptions are in [ACCESSIBILITY.md](ACCESSIBILITY.md).
+
 - Skip link to `#main`; landmarks (`header/nav`, `main`, `aside`, `footer`); one `h1` per page, sequential headings.
 - All controls are native elements (buttons, links, inputs); icon-only buttons have `aria-label`.
 - Live regions: `#qw-live` for announcements (sort changes, saves, deletions); map/result status lines use `role="status"`.
@@ -82,4 +88,5 @@ Full-page errors use `templates/400|403|404|503.html` (layout + next steps) and 
 - Maps: text list of the same events (Live Map side panel, Explorer table, Dashboard recent list).
 - `prefers-reduced-motion` disables animations (skeleton shimmer, Chart.js animation).
 - Colour is never the only carrier of meaning (magnitude, freshness, status badges all have text).
-- Responsive from 360 px: navigation collapses below `xl`; tables scroll horizontally inside their card.
+- Responsive down to 320 px (tested): navigation collapses below `xl`; tables scroll horizontally inside a focusable region.
+- Targets are at least 24 px (pager buttons 32 px; link lists 28 px rows); map markers use 2.5.8's equivalent-control exception.

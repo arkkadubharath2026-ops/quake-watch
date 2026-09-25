@@ -24,6 +24,7 @@ Every dependency must solve a concrete problem. Versions are pinned to compatibl
 | pytest, pytest-django, pytest-cov | Test runner, Django integration, coverage |
 | freezegun | Deterministic time for cooldown / freshness tests |
 | playwright, pytest-playwright | Browser end-to-end tests (browser binary: `python -m playwright install chromium`, not a Python dependency) |
+| axe-playwright-python | Bundles axe-core (4.12, WCAG 2.2 AA rules) and injects it through Playwright for the automated accessibility audit (`tests/e2e/test_accessibility.py`); dev/test only, never served to users |
 | ruff | Lint + format (also run by the Claude PostToolUse hook) |
 | mypy, django-stubs, djangorestframework-stubs | Strict static typing, including the DRF API boundary |
 | pip-audit | Dependency vulnerability scan (CI) |

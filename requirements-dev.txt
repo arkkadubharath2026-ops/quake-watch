@@ -1,11 +1,12 @@
 -r requirements.txt
-pytest>=8.4,<9
+pytest>=9.0.3,<10       # >=9.0.3: PYSEC-2026-1845 (predictable /tmp/pytest-of-{user} dirs)
 pytest-django>=4.11,<5
 pytest-cov>=6.2,<7
 # (httpx.MockTransport covers adapter contract/resilience tests; no respx needed)
 freezegun>=1.5,<2         # deterministic clocks for cooldown/freshness tests
 playwright>=1.55,<2       # browser end-to-end tests
 pytest-playwright>=0.7,<1
+axe-playwright-python>=0.1.8,<1  # axe-core WCAG 2.2 rules in the Playwright suite
 ruff>=0.13,<1             # lint + format
 mypy>=1.18,<2             # static type checking
 django-stubs>=5.2,<7

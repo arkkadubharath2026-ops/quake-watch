@@ -103,7 +103,7 @@
     renderPager(data);
     if (!data.results.length) return false;
     const filters = filtersFromParams();
-    el.append(h("div", { class: "qw-table-wrap" },
+    el.append(window.QW.scrollRegion("Search results table",
       h("table", { class: "table table-hover qw-table align-middle" },
         h("caption", { class: "visually-hidden" }, `Earthquakes matching: ${data.query.summary}. Page ${data.page} of ${data.total_pages}.`),
         h("thead", {}, h("tr", {}, COLUMNS.map((c) => headerCell(c, filters)))),
@@ -266,7 +266,7 @@
     showFieldErrors(form, null);
     const s = result.data;
     const id = encodeURIComponent(s.id || s.key);
-    out.replaceChildren(h("div", { class: "alert alert-success mb-0", role: "status" },
+    window.QW.fill(out, h("div", { class: "alert alert-success mb-0", role: "status" },
       `Snapshot frozen with ${fmt.num(s.row_count)} events. Download: `,
       h("a", { href: `/api/v1/research/snapshots/${id}/export?format=csv` }, "CSV"), " · ",
       h("a", { href: `/api/v1/research/snapshots/${id}/export?format=json` }, "JSON"), " · ",

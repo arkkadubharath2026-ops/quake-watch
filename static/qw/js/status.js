@@ -29,7 +29,7 @@
     const r = await api("/system/health");
     const data = r.ok ? r.data : r.status === 503 ? { status: "degraded", database: "down", cache: "unknown", checked_at: null } : null;
     if (!data) return window.QW.errorState(el, r, renderHealth);
-    el.replaceChildren(h("dl", { class: "qw-kv" },
+    window.QW.fill(el, h("dl", { class: "qw-kv" },
       h("dt", {}, "Overall"), h("dd", {}, badge(data.status === "ok", data.status === "ok" ? "operational" : "degraded")),
       h("dt", {}, "Database (ArangoDB)"), h("dd", {}, badge(data.database === "up", data.database)),
       h("dt", {}, "Cache and queue (Redis)"), h("dd", {}, badge(data.cache === "up", data.cache)),

@@ -28,7 +28,8 @@
 
   --qw-radius: 0.5rem;
   --qw-radius-sm: 0.25rem;
-  --qw-focus-ring: 0 0 0 0.2rem rgba(13, 110, 253, 0.45);
+  /* two-tone ring: the inner gap keeps it visible on brand-filled controls; outer ring >= 3:1 */
+  --qw-focus-ring: 0 0 0 2px var(--qw-surface), 0 0 0 4px var(--qw-brand);
 
   /* magnitude: ordinal one-hue ramp (validated: monotone lightness, step gaps, light end ≥ 2:1);
      always paired with marker size and a text label, never colour alone */
@@ -56,9 +57,13 @@
   --qw-border: #d8dee4;
   --qw-text-muted: #57606a;
   --qw-brand: #0b5cad;
+  --qw-on-brand: #ffffff; /* text on a brand-filled surface */
 
   --bs-body-font-family: var(--qw-font-sans);
+  --bs-link-color: #0b5cad;
   --bs-link-color-rgb: 11, 92, 173;
+  --bs-link-hover-color: #084582;
+  --bs-link-hover-color-rgb: 8, 69, 130;
 }
 
 [data-bs-theme="dark"] {
@@ -71,8 +76,11 @@
   --qw-degraded: #e3b341;
   --qw-stale: #ff7b72;
   --qw-unknown: #8b949e;
-  --qw-focus-ring: 0 0 0 0.2rem rgba(88, 166, 255, 0.55);
+  --qw-on-brand: #0d1117;
+  --bs-link-color: #58a6ff;
   --bs-link-color-rgb: 88, 166, 255;
+  --bs-link-hover-color: #79b8ff;
+  --bs-link-hover-color-rgb: 121, 184, 255;
   --bs-body-bg: #0d1117;
   --qw-mag-0: #efa955;
   --qw-mag-1: #e8883f;
@@ -129,10 +137,67 @@ code, .font-mono { font-family: var(--qw-font-mono); font-size: 0.875em; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important; /* a near-zero *infinite* animation would flicker */
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  .qw-skeleton { animation: none !important; }
 }
+
+/* ---------------------------------------------------------------- AA-contrast controls
+ * Bootstrap's primary/secondary button colours are fixed hex values that miss 4.5:1 on our muted
+ * surface (light) and on dark surfaces; re-point them at the theme tokens (WCAG 1.4.3). */
+.btn-primary {
+  --bs-btn-bg: var(--qw-brand);
+  --bs-btn-border-color: var(--qw-brand);
+  --bs-btn-color: var(--qw-on-brand);
+  --bs-btn-hover-bg: var(--bs-link-hover-color);
+  --bs-btn-hover-border-color: var(--bs-link-hover-color);
+  --bs-btn-hover-color: var(--qw-on-brand);
+  --bs-btn-active-bg: var(--bs-link-hover-color);
+  --bs-btn-active-border-color: var(--bs-link-hover-color);
+  --bs-btn-active-color: var(--qw-on-brand);
+  --bs-btn-disabled-bg: var(--qw-brand);
+  --bs-btn-disabled-border-color: var(--qw-brand);
+  --bs-btn-disabled-color: var(--qw-on-brand);
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--qw-brand);
+  --bs-btn-border-color: var(--qw-brand);
+  --bs-btn-hover-bg: var(--qw-brand);
+  --bs-btn-hover-border-color: var(--qw-brand);
+  --bs-btn-hover-color: var(--qw-on-brand);
+  --bs-btn-active-bg: var(--qw-brand);
+  --bs-btn-active-border-color: var(--qw-brand);
+  --bs-btn-active-color: var(--qw-on-brand);
+  --bs-btn-disabled-color: var(--qw-brand);
+  --bs-btn-disabled-border-color: var(--qw-brand);
+}
+.btn-outline-secondary {
+  --bs-btn-color: var(--qw-text-muted);
+  --bs-btn-border-color: var(--qw-border);
+  --bs-btn-hover-bg: var(--qw-text-muted);
+  --bs-btn-hover-border-color: var(--qw-text-muted);
+  --bs-btn-hover-color: var(--qw-surface);
+  --bs-btn-active-bg: var(--qw-text-muted);
+  --bs-btn-active-border-color: var(--qw-text-muted);
+  --bs-btn-active-color: var(--qw-surface);
+  --bs-btn-disabled-color: var(--qw-text-muted);
+}
+.nav-tabs, .nav-pills { --bs-nav-link-color: var(--bs-link-color); --bs-nav-link-hover-color: var(--bs-link-hover-color); }
+.pagination {
+  --bs-pagination-color: var(--bs-link-color);
+  --bs-pagination-hover-color: var(--bs-link-hover-color);
+  --bs-pagination-active-bg: var(--qw-brand);
+  --bs-pagination-active-border-color: var(--qw-brand);
+  --bs-pagination-active-color: var(--qw-on-brand);
+}
+
+/* ---------------------------------------------------------------- target size (WCAG 2.5.8) */
+.pagination .page-link { min-width: 2rem; text-align: center; }
+.qw-link-list li { min-height: 1.75rem; display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; }
+.qw-link-list a { display: inline-block; padding-block: 0.125rem; }
+.qw-table-wrap:focus-visible, .qw-pre:focus-visible { outline-offset: 2px; }
 
 /* ---------------------------------------------------------------- layout */
 .qw-page-header {

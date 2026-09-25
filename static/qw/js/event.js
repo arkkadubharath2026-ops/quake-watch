@@ -30,7 +30,7 @@
   }
 
   function changeTable(rows, [c1, c2, c3]) {
-    return h("div", { class: "qw-table-wrap" }, h("table", { class: "table table-sm qw-table" },
+    return window.QW.scrollRegion("Field changes", h("table", { class: "table table-sm qw-table" },
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Field"), h("th", { scope: "col" }, c1), h("th", { scope: "col" }, c2), h("th", { scope: "col", class: "num" }, c3))),
       h("tbody", {}, rows.map((r) => h("tr", {},
         h("th", { scope: "row" }, FIELD_LABELS[r.field] || r.field),
@@ -92,7 +92,7 @@
         button.disabled = true;
         const r = await api(`${base}/enrich`, { method: "POST" });
         button.disabled = false;
-        if (r.ok) out.replaceChildren(h("div", { class: "alert alert-success py-1 mb-0", role: "status" }, "Refresh queued. Reload the page in a minute to see updated details."));
+        if (r.ok) window.QW.fill(out, h("div", { class: "alert alert-success py-1 mb-0", role: "status" }, "Refresh queued. Reload the page in a minute to see updated details."));
         else errorState(out, r, null, { throttled: "Refresh limit reached; try again in a minute." });
       });
       box.append(button, out);
@@ -133,14 +133,14 @@
         h("dt", {}, "Associated ids"), h("dd", {}, data.associated_ids.length ? data.associated_ids.join(", ") : "—"),
         h("dt", {}, "Current payload SHA-256"), h("dd", {}, h("code", {}, data.current_payload.payload_hash))),
       h("h2", { class: "h3" }, "Ingestion runs that touched this event"),
-      h("div", { class: "qw-table-wrap" }, h("table", { class: "table table-sm qw-table" },
+      window.QW.scrollRegion("Ingestion runs", h("table", { class: "table table-sm qw-table" },
         h("thead", {}, h("tr", {}, ["Run", "Kind", "Started", "Status", "Requests"].map((c) => h("th", { scope: "col" }, c)))),
         h("tbody", {}, data.ingestion_runs.map((r) => h("tr", {},
           h("td", {}, h("code", {}, r._key.slice(0, 12))), h("td", {}, r.kind), h("td", {}, fmt.utc(r.started_at)), h("td", {}, r.status),
           h("td", {}, (r.requests || []).map((q) => h("div", { class: "small text-break" }, `${q.status_code ?? "—"} · ${q.url}`)))))))),
       h("h2", { class: "h3 mt-3" }, "Raw USGS payload (current revision)"),
       data.current_payload.retained
-        ? h("pre", { class: "qw-pre" }, JSON.stringify(data.current_payload.payload, null, 2))
+        ? h("pre", { class: "qw-pre", tabindex: "0", role: "region", "aria-label": "Raw source payload (JSON)" }, JSON.stringify(data.current_payload.payload, null, 2))
         : h("p", {}, "The raw payload for this revision is no longer retained (payload retention window elapsed); its hash is recorded above."));
     return true;
   }

@@ -41,6 +41,19 @@
     return el;
   }
 
+  /** Horizontally scrollable wrapper for wide tables: focusable and named, so keyboard users can
+   * scroll it (WCAG 2.1.1; axe scrollable-region-focusable). */
+  function scrollRegion(label, child) {
+    return h("div", { class: "qw-table-wrap", tabindex: "0", role: "region", "aria-label": label }, child);
+  }
+
+  /** Replace a region's content after a manual loading state; ends its aria-busy period. */
+  function fill(el, ...children) {
+    clear(el).removeAttribute("aria-busy");
+    append(el, children);
+    return el;
+  }
+
   /* ------------------------------------------------------------ API client */
   function csrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -355,7 +368,7 @@
   });
 
   window.QW = {
-    api, load, state, errorState, partialNotice, h, append, clear, icon, fmt, band, magBadge, time,
+    api, load, state, errorState, partialNotice, h, append, clear, fill, scrollRegion, icon, fmt, band, magBadge, time,
     eventLink, announce, readJsonScript, formToParams, showFieldErrors, refreshUnread, query,
   };
 })();

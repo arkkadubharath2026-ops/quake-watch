@@ -9,8 +9,8 @@
   const OUTCOME_CLASS = { ok: "text-bg-success", requested: "text-bg-secondary", failed: "text-bg-danger", denied: "text-bg-danger" };
   const statusBadge = (s) => h("span", { class: `badge ${STATUS_CLASS[s] || "text-bg-secondary"}` }, s);
 
-  function table(columns, rows) {
-    return h("div", { class: "qw-table-wrap" }, h("table", { class: "table table-sm qw-table align-middle" },
+  function table(columns, rows, label = "Operations table") {
+    return window.QW.scrollRegion(label, h("table", { class: "table table-sm qw-table align-middle" },
       h("thead", {}, h("tr", {}, columns.map((c) => h("th", { scope: "col", class: c.num ? "num" : null }, c.label || c)))),
       h("tbody", {}, rows)));
   }
@@ -125,7 +125,7 @@
   function actionResult(result, okMessage) {
     const out = $("action-status");
     if (!result.ok) return errorState(out, result, null, { throttled: "Admin action limit reached; try again later." });
-    out.replaceChildren(h("div", { class: "alert alert-success py-2 mb-0", role: "status" }, okMessage));
+    window.QW.fill(out, h("div", { class: "alert alert-success py-2 mb-0", role: "status" }, okMessage));
     announce(okMessage);
     window.setTimeout(() => { loadRuns(); loadAudit(); loadJobs(); loadDeadLetters(); }, 2000);
   }

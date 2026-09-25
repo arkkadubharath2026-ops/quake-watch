@@ -23,7 +23,7 @@
         h("dt", {}, "Application"), h("dd", {}, m.application_version),
         h("dt", {}, "Schemas"), h("dd", {}, `database v${m.database_schema_version} · event document v${m.event_document_version} · export v${m.export_schema_version} · revision policy v${m.revision_policy_version}`),
         h("dt", {}, "Attribution"), h("dd", {}, m.attribution)),
-      h("details", {}, h("summary", { class: "small" }, "Full manifest (JSON)"), h("pre", { class: "qw-pre mt-2" }, JSON.stringify(m, null, 2))));
+      h("details", {}, h("summary", { class: "small" }, "Full manifest (JSON)"), h("pre", { class: "qw-pre mt-2", tabindex: "0", role: "region", "aria-label": "Full manifest (JSON)" }, JSON.stringify(m, null, 2))));
   }
 
   function loadSnapshots() {
@@ -80,7 +80,7 @@
     }
     showFieldErrors(form, null);
     form.reset();
-    out.replaceChildren(h("div", { class: "alert alert-success py-2 mb-0", role: "status" }, `Frozen “${r.data.title}” with ${fmt.num(r.data.row_count)} events.`));
+    window.QW.fill(out, h("div", { class: "alert alert-success py-2 mb-0", role: "status" }, `Frozen “${r.data.title}” with ${fmt.num(r.data.row_count)} events.`));
     loadSnapshots();
   }
 
