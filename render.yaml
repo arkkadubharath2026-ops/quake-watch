@@ -1,0 +1,137 @@
+# Render Blueprint (ESD §18 deployment profile, adapted for Render's managed platform).
+# One Docker image (docker/Dockerfile) runs as three services, matching docker-compose.yml's
+# web/worker/beat split so behaviour never drifts between local and Render.
+#
+# ArangoDB has no managed offering on Render, so it runs as a private service from the
+# upstream image with a persistent disk, reachable internally at quakewatch-arangodb:8529.
+# Redis is Render's managed Redis/Key Value service (broker/cache only, per ADR-009 /
+# ARCHITECTURE.md).
+#
+# After "New +" -> "Blueprint" and pointing Render at this repo, set every "sync: false"
+# secret below in the dashboard before the first deploy. See docs/RENDER_DEPLOY.md.
+
+services:
+  - type: web
+    name: quakewatch-web
+    runtime: docker
+    dockerfilePath: docker/Dockerfile
+    dockerContext: .
+    dockerCommand: web
+    plan: starter
+    healthCheckPath: /health/ready
+    autoDeploy: true
+    envVars:
+      - key: QW_ENV
+        value: production
+      - key: QW_DEBUG
+        value: "false"
+      - key: QW_ALLOWED_HOSTS
+        value: .onrender.com
+      - key: QW_CSRF_TRUSTED_ORIGINS
+        value: https://*.onrender.com
+      - key: QW_NUM_PROXIES
+        value: "1"
+      - key: QW_SECRET_KEY
+        sync: false
+      - key: QW_ARANGO_URL
+        value: http://quakewatch-arangodb:8529
+      - key: QW_ARANGO_DB
+        value: quakewatch
+      - key: QW_ARANGO_USER
+        value: root
+      - key: QW_ARANGO_PASSWORD
+        sync: false
+      - key: QW_REDIS_URL
+        fromService:
+          type: redis
+          name: quakewatch-redis
+          property: connectionString
+      - key: QW_AUTH_DB_PATH
+        value: /data/auth/auth.sqlite3
+      - key: QW_LOG_JSON
+        value: "true"
+
+  - type: worker
+    name: quakewatch-worker
+    runtime: docker
+    dockerfilePath: docker/Dockerfile
+    dockerContext: .
+    dockerCommand: worker
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: QW_ENV
+        value: production
+      - key: QW_DEBUG
+        value: "false"
+      - key: QW_SECRET_KEY
+        sync: false
+      - key: QW_ARANGO_URL
+        value: http://quakewatch-arangodb:8529
+      - key: QW_ARANGO_DB
+        value: quakewatch
+      - key: QW_ARANGO_USER
+        value: root
+      - key: QW_ARANGO_PASSWORD
+        sync: false
+      - key: QW_REDIS_URL
+        fromService:
+          type: redis
+          name: quakewatch-redis
+          property: connectionString
+      - key: QW_AUTH_DB_PATH
+        value: /data/auth/auth.sqlite3
+      - key: QW_LOG_JSON
+        value: "true"
+
+  - type: worker
+    name: quakewatch-beat
+    runtime: docker
+    dockerfilePath: docker/Dockerfile
+    dockerContext: .
+    dockerCommand: beat
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: QW_ENV
+        value: production
+      - key: QW_DEBUG
+        value: "false"
+      - key: QW_SECRET_KEY
+        sync: false
+      - key: QW_ARANGO_URL
+        value: http://quakewatch-arangodb:8529
+      - key: QW_ARANGO_DB
+        value: quakewatch
+      - key: QW_ARANGO_USER
+        value: root
+      - key: QW_ARANGO_PASSWORD
+        sync: false
+      - key: QW_REDIS_URL
+        fromService:
+          type: redis
+          name: quakewatch-redis
+          property: connectionString
+      - key: QW_AUTH_DB_PATH
+        value: /data/auth/auth.sqlite3
+      - key: QW_LOG_JSON
+        value: "true"
+
+  - type: pserv
+    name: quakewatch-arangodb
+    runtime: image
+    image:
+      url: docker.io/arangodb/arangodb:3.12.5
+    plan: starter
+    disk:
+      name: arango-data
+      mountPath: /var/lib/arangodb3
+      sizeGB: 5
+    envVars:
+      - key: ARANGO_ROOT_PASSWORD
+        sync: false
+
+  - type: redis
+    name: quakewatch-redis
+    plan: starter
+    ipAllowList: []

@@ -495,7 +495,8 @@ Suggested acknowledgment:
 - `docs/PRD.md` — product scope, users, differentiation, requirements, research potential.
 - `docs/ESD.md` — architecture, data model, ingestion, reliability, security, testing, deployment.
 - `docs/ARCHITECTURE.md` — as-built architecture, data model, rubric mapping, ingestion flow.
-- `docs/adr/` — architecture decision records (ADR-001 … ADR-012).
+- `docs/adr/` — architecture decision records (ADR-001 … ADR-013).
+- `docs/RENDER_DEPLOY.md` — deploying to Render (`render.yaml` Blueprint).
 - `docs/DEPENDENCIES.md` — why each dependency exists.
 - `docs/AQL_QUERIES.md` — the 47 named AQL queries with live EXPLAIN plans (generated).
 - `docs/BENCHMARKS.md` — index before/after benchmark at 500 / 10k / 100k records (generated).
