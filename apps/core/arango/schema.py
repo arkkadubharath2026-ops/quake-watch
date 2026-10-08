@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 6  # v3: leases; v4: cache/metrics/breakers; v5: jobs; v6: auth users, sessions
 GRAPH_NAME = "quakewatch_graph"
 EVENTS_SEARCH_VIEW = "events_search"
 
@@ -34,6 +34,17 @@ INGESTION_RUNS = "ingestion_runs"
 BACKFILL_JOBS = "backfill_jobs"
 DEAD_LETTERS = "dead_letters"
 AUDIT_LOG = "audit_log"
+JOB_LEASES = "job_leases"
+CACHE_ENTRIES = "cache_entries"
+METRIC_COUNTERS = "metric_counters"
+METRIC_SERIES = "metric_series"
+CIRCUIT_BREAKERS = "circuit_breakers"
+JOBS = "jobs"
+JOB_SCHEDULES = "job_schedules"
+AUTH_USERS = "auth_users"
+SESSIONS = "sessions"
+ID_SEQUENCES = "id_sequences"
+RATE_LIMITS = "rate_limits"
 SCHEMA_META = "schema_meta"
 
 EVENT_IN_REGION = "event_in_region"
@@ -175,6 +186,78 @@ ALERT_RULE_RULE: dict[str, Any] = {
         "updated_at": _ts(),
     },
     "required": ["user_id", "name", "enabled", "conditions", "cooldown_minutes", "created_at"],
+}
+
+
+# Lease times are ArangoDB server time in epoch seconds (DATE_NOW() / 1000), the numeric form the
+# TTL index expires on; they are never compared with a worker's clock (apps.core.arango.leases).
+JOB_LEASE_RULE: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "token": {"type": "string", "minLength": 16, "maxLength": 64},
+        "owner": {"type": "string", "maxLength": 200},
+        "acquired_at": {"type": "number"},
+        "renewed_at": {"type": "number"},
+        "expires_at": {"type": "number"},
+        # Whole number, but typed "number": AQL arithmetic (OLD.fencing + 1) yields a double, which
+        # ArangoDB's validator rejects as "integer" even when it is integral.
+        "fencing": {"type": "number", "multipleOf": 1, "minimum": 1},
+    },
+    "required": ["token", "owner", "acquired_at", "renewed_at", "expires_at", "fencing"],
+}
+
+
+AUTH_USER_RULE: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "number", "multipleOf": 1, "minimum": 1},
+        "username": {"type": "string", "minLength": 1, "maxLength": 150},
+        "username_ci": {"type": "string", "minLength": 1, "maxLength": 150},
+        "email": {"type": "string", "maxLength": 254},
+        "password": {"type": "string", "maxLength": 128},
+        "is_active": {"type": "boolean"},
+        "is_staff": {"type": "boolean"},
+        "is_superuser": {"type": "boolean"},
+        "date_joined": {"type": "string"},
+        "last_login": {"type": ["string", "null"]},
+    },
+    "required": [
+        "id",
+        "username",
+        "username_ci",
+        "email",
+        "password",
+        "is_active",
+        "is_staff",
+        "is_superuser",
+        "date_joined",
+    ],
+}
+
+JOB_RULE: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "task": {"type": "string", "minLength": 1, "maxLength": 200},
+        "status": {"enum": ["queued", "running", "succeeded", "failed", "dead", "expired"]},
+        "args": {"type": "array"},
+        "kwargs": {"type": "object"},
+        "run_at": {"type": "number"},
+        "created_at": {"type": "number"},
+        "attempts": {"type": "number", "multipleOf": 1, "minimum": 0},
+        "max_attempts": {"type": "number", "multipleOf": 1, "minimum": 1},
+        "time_limit": {"type": "number", "minimum": 1},
+    },
+    "required": [
+        "task",
+        "status",
+        "args",
+        "kwargs",
+        "run_at",
+        "created_at",
+        "attempts",
+        "max_attempts",
+        "time_limit",
+    ],
 }
 
 
@@ -338,6 +421,73 @@ COLLECTIONS: tuple[CollectionSpec, ...] = (
         purpose="Audit trail of privileged/administrative actions (FR-15).",
         indexes=(_p("qw_audit_at", "at"),),
     ),
+    CollectionSpec(
+        JOB_LEASES,
+        rule=JOB_LEASE_RULE,
+        purpose=(
+            "Job leases: at most one running instance per job name; expiry by server time. "
+            "The TTL index only garbage-collects abandoned leases."
+        ),
+        indexes=(IndexSpec("qw_leases_ttl", "ttl", ("expires_at",), expire_after=0),),
+    ),
+    CollectionSpec(
+        CACHE_ENTRIES,
+        purpose=(
+            "Django cache (throttles, login counters, analytics, diagnostics). Expiry checked on "
+            "every read (application clock); the TTL index only removes expired entries."
+        ),
+        indexes=(IndexSpec("qw_cache_ttl", "ttl", ("expires_at",), expire_after=0),),
+    ),
+    CollectionSpec(
+        RATE_LIMITS,
+        purpose=(
+            "API rate-limit windows (apps.core.throttling): recent request times per scope and "
+            "client, checked and recorded in one atomic statement. TTL index = garbage collection."
+        ),
+        indexes=(IndexSpec("qw_rate_limits_ttl", "ttl", ("expires_at",), expire_after=0),),
+    ),
+    CollectionSpec(METRIC_COUNTERS, purpose="Operational counters (one document per name)."),
+    CollectionSpec(METRIC_SERIES, purpose="Latency series: the most recent samples per name."),
+    CollectionSpec(CIRCUIT_BREAKERS, purpose="Shared circuit-breaker state per upstream source."),
+    CollectionSpec(
+        JOBS,
+        rule=JOB_RULE,
+        purpose=(
+            "Durable background jobs (queue, leases, retries, dead letters); see apps.jobs. "
+            "Finished jobs are purged by the TTL index after the retention period."
+        ),
+        indexes=(
+            _p("qw_jobs_claim", "status", "run_at"),
+            _p("qw_jobs_dedupe", "dedupe_key", unique=True, sparse=True),
+            _p("qw_jobs_task_created", "task", "created_at"),
+            IndexSpec("qw_jobs_purge", "ttl", ("purge_at",), expire_after=0),
+        ),
+    ),
+    CollectionSpec(
+        JOB_SCHEDULES, purpose="Periodic schedule state: the last enqueued tick per entry."
+    ),
+    CollectionSpec(
+        AUTH_USERS,
+        rule=AUTH_USER_RULE,
+        purpose=(
+            "Accounts (replaces Django's SQLite auth_user, ADR-015): integer id as _key, Django "
+            "password hash, staff flags. Never exposed by traversals (the graph uses `users`)."
+        ),
+        # Exact uniqueness, as Django's auth_user; sign-up also rejects case-insensitive twins.
+        indexes=(
+            _p("qw_auth_username", "username", unique=True),
+            _p("qw_auth_username_ci", "username_ci"),
+        ),
+    ),
+    CollectionSpec(
+        SESSIONS,
+        purpose=(
+            "Django sessions (apps.accounts.sessions). Expiry checked on every read; the TTL "
+            "index only removes expired sessions."
+        ),
+        indexes=(IndexSpec("qw_sessions_ttl", "ttl", ("expire_at",), expire_after=0),),
+    ),
+    CollectionSpec(ID_SEQUENCES, purpose="Monotonic integer id allocation (e.g. user ids)."),
     CollectionSpec(SCHEMA_META, purpose="Applied schema version bookkeeping."),
     CollectionSpec(EVENT_IN_REGION, edge=True, purpose="events -> regions"),
     CollectionSpec(EVENT_REPORTED_BY_NETWORK, edge=True, purpose="events -> networks"),

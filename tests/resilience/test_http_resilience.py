@@ -1,7 +1,7 @@
 """Resilience tests for the upstream HTTP adapter and the shared circuit breaker.
 
 Transport behaviour is simulated with ``httpx.MockTransport``; the circuit breaker uses the real
-Redis instance (namespaced test keys). Sleeps are captured instead of performed.
+ArangoDB test database. Sleeps are captured instead of performed.
 """
 
 from __future__ import annotations
@@ -10,9 +10,9 @@ from collections.abc import Callable, Iterator
 
 import httpx
 import pytest
-import redis
+from arango.database import StandardDatabase
 
-from apps.core import resilience
+from apps.core.arango import breaker_store
 from apps.core.errors import CircuitOpen
 from apps.core.resilience import CircuitBreaker, backoff_delay
 from apps.ingestion.adapters.http import ResilientHttpClient, UpstreamRequestFailed
@@ -37,7 +37,7 @@ def clock() -> FakeClock:
 
 
 @pytest.fixture
-def breaker(clock: FakeClock) -> Iterator[CircuitBreaker]:
+def breaker(clock: FakeClock, arango_session_db: StandardDatabase) -> Iterator[CircuitBreaker]:
     cb = CircuitBreaker("TEST", failure_threshold=3, reset_seconds=60, clock=clock)
     cb.reset()
     yield cb
@@ -191,15 +191,10 @@ class TestCircuitBreaker:
         breaker.record_failure()
         assert breaker.state().status == "open"
 
-    def test_redis_outage_fails_open(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        class DeadRedis:
-            def __getattr__(self, name: str) -> Callable[..., None]:
-                def fail(*args: object, **kwargs: object) -> None:
-                    raise redis.ConnectionError("redis down")
-
-                return fail
-
-        monkeypatch.setattr(resilience, "get_redis", DeadRedis)
+    def test_store_outage_fails_open(
+        self, dead_arango_db: StandardDatabase, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(breaker_store, "get_db", lambda: dead_arango_db)
         cb = CircuitBreaker("OUTAGE", failure_threshold=1, reset_seconds=60)
         cb.before_call()  # must not raise: breaker fails open
         cb.record_failure()

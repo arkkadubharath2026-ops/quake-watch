@@ -21,7 +21,6 @@ env:
   QW_SECRET_KEY: ci-only-secret-key-not-used-anywhere-else-0123456789abcdef
   QW_ARANGO_PASSWORD: ci-arango-password
   QW_ARANGO_URL: http://127.0.0.1:8529
-  QW_REDIS_URL: redis://127.0.0.1:6379/0
   QW_ALLOWED_HOSTS: localhost,127.0.0.1
   QW_LOG_JSON: "false"
 
@@ -45,7 +44,7 @@ jobs:
     name: Unit, contract, resilience, architecture
     needs: lint
     runs-on: ubuntu-latest
-    services:  # ArangoDB for the repository-backed unit tests; Redis for breaker/throttle state
+    services:  # ArangoDB: repositories, job queue, cache/breaker/metrics state
       arangodb:
         image: arangodb:3.12.5
         env:
@@ -54,10 +53,6 @@ jobs:
         options: >-
           --health-cmd "wget -q -O /dev/null http://127.0.0.1:8529/_admin/server/availability"
           --health-interval 5s --health-timeout 3s --health-retries 40
-      redis:
-        image: redis:7.4-alpine
-        ports: ["6379:6379"]
-        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -81,10 +76,6 @@ jobs:
         options: >-
           --health-cmd "wget -q -O /dev/null http://127.0.0.1:8529/_admin/server/availability"
           --health-interval 5s --health-timeout 3s --health-retries 40
-      redis:
-        image: redis:7.4-alpine
-        ports: ["6379:6379"]
-        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -117,10 +108,6 @@ jobs:
         options: >-
           --health-cmd "wget -q -O /dev/null http://127.0.0.1:8529/_admin/server/availability"
           --health-interval 5s --health-timeout 3s --health-retries 40
-      redis:
-        image: redis:7.4-alpine
-        ports: ["6379:6379"]
-        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

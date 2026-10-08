@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 from arango.database import StandardDatabase
-from django.contrib.auth.models import User
 from django.test import Client
 
+from apps.accounts.identity import ArangoUser, create_user
 from apps.alerts.observer import AlertRuleObserver
 from apps.core.arango import schema as s
 from apps.ingestion.normalizer import NormalizedRecord, normalize_feature
@@ -23,8 +23,6 @@ API = "/api/v1"
 _FIRST = json.loads(load_fixture("usgs/all_day.geojson"))["features"][0]
 CENTER = [round(c, 3) for c in _FIRST["geometry"]["coordinates"][:2]]  # [lon, lat]
 PASSWORD = "a-long-password-123"
-
-pytestmark = pytest.mark.django_db
 
 
 def body(response: Any) -> Any:
@@ -55,8 +53,8 @@ def ingest(db: StandardDatabase, *raws: dict[str, Any], mode: str = "feed") -> N
 
 
 @pytest.fixture
-def alice(client: Client) -> User:
-    user = User.objects.create_user("alice", password=PASSWORD)
+def alice(client: Client) -> ArangoUser:
+    user = create_user("alice", password=PASSWORD)
     client.force_login(user)
     return user
 
@@ -75,7 +73,7 @@ def create_rule(client: Client, **overrides: Any) -> dict[str, Any]:
 
 class TestRuleCrud:
     def test_create_list_get_patch_delete(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         rule = create_rule(client)
         assert rule["enabled"] is True
@@ -100,7 +98,7 @@ class TestRuleCrud:
         assert arango_db.collection(s.USER_OWNS_RULE).count() == 0
 
     def test_graph_edges_and_user_vertex_created(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         rule = create_rule(client)
         (edge,) = list(arango_db.collection(s.USER_OWNS_RULE).all())
@@ -125,7 +123,7 @@ class TestRuleCrud:
         self,
         client: Client,
         arango_db: StandardDatabase,
-        alice: User,
+        alice: ArangoUser,
         payload: dict[str, Any],
         field: str,
     ) -> None:
@@ -135,10 +133,10 @@ class TestRuleCrud:
         assert any(key == field or key.startswith(field) for key in fields), fields
 
     def test_other_users_rules_are_invisible(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         rule = create_rule(client)
-        mallory = User.objects.create_user("mallory", password=PASSWORD)
+        mallory = create_user("mallory", password=PASSWORD)
         other = Client()
         other.force_login(mallory)
         assert body(other.get(f"{API}/alert-rules"))["results"] == []
@@ -157,7 +155,7 @@ class TestRuleCrud:
         self,
         client: Client,
         arango_db: StandardDatabase,
-        alice: User,
+        alice: ArangoUser,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("apps.alerts.repository.MAX_RULES_PER_USER", 2)
@@ -174,7 +172,7 @@ class TestRuleCrud:
 
 class TestMatching:
     def test_live_event_matches_with_explanation(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         rule = create_rule(client)
         ingest(arango_db, recent_feature(0))
@@ -199,7 +197,7 @@ class TestMatching:
         assert body(client.get(f"{API}/alerts/unread-count"))["unread"] == 0
 
     def test_replays_and_revisions_never_duplicate_matches(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         create_rule(client)
         raw = recent_feature(0)
@@ -213,7 +211,7 @@ class TestMatching:
         assert arango_db.collection(s.RULE_MATCHED_EVENT).count() == 1
 
     def test_revision_that_newly_satisfies_rule_creates_match(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         create_rule(client, conditions={"minimum_magnitude": 4.5, "center": CENTER,
                                         "radius_km": 100})  # fmt: skip
@@ -229,7 +227,7 @@ class TestMatching:
         assert "magnitude 4.8 >= 4.5" in match["explanation"]["reason"]
 
     def test_cooldown_suppresses_repeat_notifications(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         create_rule(client, conditions={"minimum_magnitude": 0.1})  # any two recent events
         ingest(arango_db, recent_feature(0), recent_feature(1))
@@ -248,7 +246,7 @@ class TestMatching:
         self,
         client: Client,
         arango_db: StandardDatabase,
-        alice: User,
+        alice: ArangoUser,
         kwargs: dict[str, Any],
         mode: str,
     ) -> None:
@@ -257,7 +255,7 @@ class TestMatching:
         assert arango_db.collection(s.ALERT_MATCHES).count() == 0
 
     def test_rule_does_not_match_events_before_it_existed(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         rule = create_rule(client)
         arango_db.collection(s.ALERT_RULES).update(
@@ -267,19 +265,19 @@ class TestMatching:
         assert arango_db.collection(s.ALERT_MATCHES).count() == 0
 
     def test_disabled_rule_does_not_match(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         create_rule(client, enabled=False)
         ingest(arango_db, recent_feature(0))
         assert arango_db.collection(s.ALERT_MATCHES).count() == 0
 
     def test_feed_is_private(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         create_rule(client)
         ingest(arango_db, recent_feature(0))
         bob = Client()
-        bob.force_login(User.objects.create_user("bob", password=PASSWORD))
+        bob.force_login(create_user("bob", password=PASSWORD))
         assert body(bob.get(f"{API}/alerts/matches"))["total"] == 0
         assert (
             body(bob.post(f"{API}/alerts/matches/read", {}, content_type="application/json"))[
@@ -290,7 +288,7 @@ class TestMatching:
         assert body(client.get(f"{API}/alerts/unread-count"))["unread"] == 1
 
     def test_delete_rule_keeps_match_history(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         rule = create_rule(client)
         ingest(arango_db, recent_feature(0))
@@ -300,7 +298,7 @@ class TestMatching:
         assert body(client.get(f"{API}/alerts/matches"))["results"][0]["rule_snapshot"]["name"]
 
     def test_preview_explains_would_be_matches(
-        self, client: Client, arango_db: StandardDatabase, alice: User
+        self, client: Client, arango_db: StandardDatabase, alice: ArangoUser
     ) -> None:
         ingest(arango_db, recent_feature(0), mode="backfill")
         rule = create_rule(client)

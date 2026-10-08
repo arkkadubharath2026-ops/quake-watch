@@ -31,7 +31,7 @@ ignore_missing_imports = false
 exclude = ["tests/", "migrations/", "\\.venv/", "\\.claude/"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "kombu.*", "whitenoise.*"]
+module = ["whitenoise.*"]
 ignore_missing_imports = true
 follow_untyped_imports = false
 
@@ -64,6 +64,3 @@ known-first-party = ["apps", "config", "tests"]
 [tool.ruff.format]
 line-ending = "lf"
 
-[[tool.mypy.overrides]]
-module = ["apps.*.tasks", "apps.core.task_context"]
-disallow_untyped_decorators = false  # Celery decorators/signals are untyped

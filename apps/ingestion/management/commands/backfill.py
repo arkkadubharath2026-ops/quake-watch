@@ -8,8 +8,10 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from apps.core.arango.client import get_db
 from apps.core.errors import QuakeWatchError
+from apps.core.locks import describe_holder, job_lease
 from apps.ingestion.adapters.usgs import build_usgs_client
 from apps.ingestion.services import BackfillInterrupted, BackfillRequest, BackfillService
+from apps.ingestion.tasks import BACKFILL_LEASE_TTL_SECONDS, backfill_lease_name
 
 
 def _date(value: str) -> datetime:
@@ -30,7 +32,9 @@ class Command(BaseCommand):
         parser.add_argument("--window-days", type=int, default=7)
         parser.add_argument("--resume", metavar="JOB_ID", help="resume an existing job")
         parser.add_argument(
-            "--enqueue", action="store_true", help="hand the job to Celery instead of running here"
+            "--enqueue",
+            action="store_true",
+            help="queue the job for a worker instead of running here",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -46,8 +50,18 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f"backfill job {job_id} enqueued"))
                 return
             job: dict[str, Any] = {}
+            name = backfill_lease_name(job_id)
             while True:
-                job = service.run_job(job_id, max_windows=1)
+                # Same lease as the queued job (P2), taken per window — the task's unit of work —
+                # so a long CLI run needs no renewal and never overlaps a task on this job.
+                # LockUnavailable is a QuakeWatchError: reported below, nothing runs (P1).
+                with job_lease(name, ttl_seconds=BACKFILL_LEASE_TTL_SECONDS) as lease:
+                    if lease is None:
+                        raise CommandError(
+                            f"backfill job {job_id} is already running ({describe_holder(name)}); "
+                            f"resume later with --resume {job_id}"
+                        )
+                    job = service.run_job(job_id, max_windows=1)
                 self.stdout.write(
                     f"  window {job.get('windows_completed')} done -> next "
                     f"{job.get('next_window_start')} counts={job.get('counts')}"

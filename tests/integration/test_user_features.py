@@ -15,11 +15,11 @@ import httpx
 import pytest
 from arango.database import StandardDatabase
 from django.contrib.auth import authenticate
-from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import Client, RequestFactory
 
 from apps.accounts import security
+from apps.accounts.identity import ArangoUser, create_user, get_by_username
 from apps.core.arango import schema as s
 from apps.core.arango.schema import SCHEMA_VERSION as DATABASE_SCHEMA_VERSION
 from apps.core.resilience import CircuitBreaker
@@ -33,7 +33,6 @@ from tests.conftest import load_fixture
 
 API = "/api/v1"
 PASSWORD = "a-long-password-123"
-pytestmark = pytest.mark.django_db
 
 
 def body(response: Any) -> Any:
@@ -47,14 +46,15 @@ def events(arango_db: StandardDatabase) -> StandardDatabase:
 
 
 @pytest.fixture
-def user_client(client: Client) -> Client:
-    client.force_login(User.objects.create_user("researcher", password=PASSWORD))
+def user_client(client: Client, arango_db: StandardDatabase) -> Client:
+    # arango_db first: it truncates every collection, accounts and sessions included
+    client.force_login(create_user("researcher", password=PASSWORD))
     return client
 
 
 @pytest.fixture
-def staff_client(client: Client) -> Client:
-    client.force_login(User.objects.create_user("ops", password=PASSWORD, is_staff=True))
+def staff_client(client: Client, arango_db: StandardDatabase) -> Client:
+    client.force_login(create_user("ops", password=PASSWORD, is_staff=True))
     return client
 
 
@@ -106,7 +106,7 @@ class TestSavedSearches:
             )
         )
         other = Client()
-        other.force_login(User.objects.create_user("other", password=PASSWORD))
+        other.force_login(create_user("other", password=PASSWORD))
         assert other.get(f"{API}/saved-searches/{created['id']}").status_code == 404
         assert other.get(f"{API}/saved-searches/{created['id']}/events").status_code == 404
 
@@ -194,7 +194,7 @@ class TestResearchSnapshots:
         assert [s_["id"] for s_ in listing] == [snapshot["id"]]
         assert "members" not in listing[0]
         other = Client()
-        other.force_login(User.objects.create_user("peer", password=PASSWORD))
+        other.force_login(create_user("peer", password=PASSWORD))
         assert other.get(f"{API}/research/snapshots/{snapshot['id']}").status_code == 404
         assert other.get(f"{API}/research/snapshots/{snapshot['id']}/export").status_code == 404
         assert user_client.delete(f"{API}/research/snapshots/{snapshot['id']}").status_code == 204
@@ -252,7 +252,7 @@ class TestAdminActionsAndAudit:
             f"{API}/operations/sync", {"feed": "all_day"}, content_type="application/json"
         )
         assert response.status_code == 202
-        assert arango_db.collection(s.EVENTS).count() > 0  # eager Celery ran the real task
+        assert arango_db.collection(s.EVENTS).count() > 0  # eager job ran the real task
         entries = body(staff_client.get(f"{API}/operations/audit"))["results"]
         sync_entries = [e for e in entries if e["action"] == "ingestion.sync_triggered"]
         assert sync_entries[0]["actor_username"] == "ops"
@@ -332,7 +332,7 @@ class TestLoginThrottling:
         cache.clear()
 
     def test_lockout_after_repeated_failures(self) -> None:
-        User.objects.create_user("victim", password=PASSWORD)
+        create_user("victim", password=PASSWORD)
         request = RequestFactory().post("/login", REMOTE_ADDR="203.0.113.7")
         for _ in range(security.PAIR_LIMIT):
             assert authenticate(request, username="victim", password="wrong") is None
@@ -343,7 +343,7 @@ class TestLoginThrottling:
         assert authenticate(other, username="victim", password=PASSWORD) is not None
 
     def test_success_resets_and_is_audited(self, arango_db: StandardDatabase) -> None:
-        User.objects.create_user("normal", password=PASSWORD)
+        create_user("normal", password=PASSWORD)
         client = Client()
         assert not client.login(username="normal", password="wrong")
         assert client.login(username="normal", password=PASSWORD)
@@ -375,16 +375,16 @@ class TestSecurityReviewFixes:
         request = RequestFactory().post("/login", REMOTE_ADDR="198.51.100.77")
         for i in range(security.ADDRESS_LIMIT):
             authenticate(request, username=f"user{i}", password="Winter2026!")
-        User.objects.create_user("target", password=PASSWORD)
+        create_user("target", password=PASSWORD)
         assert authenticate(request, username="target", password=PASSWORD) is None
 
     def test_distributed_lockout_cannot_block_known_address(self) -> None:
-        User.objects.create_user("admin2", password=PASSWORD)
+        create_user("admin2", password=PASSWORD)
         home = RequestFactory().post("/login", REMOTE_ADDR="192.0.2.10")
         assert authenticate(home, username="admin2", password=PASSWORD) is not None
         from django.contrib.auth.signals import user_logged_in
 
-        user_logged_in.send(sender=User, request=home, user=User.objects.get(username="admin2"))
+        user_logged_in.send(sender=ArangoUser, request=home, user=get_by_username("admin2"))
         for i in range(security.USERNAME_LIMIT + 5):  # attacker rotates addresses
             attacker = RequestFactory().post("/login", REMOTE_ADDR=f"203.0.113.{i}")
             authenticate(attacker, username="admin2", password="guess")
@@ -393,7 +393,7 @@ class TestSecurityReviewFixes:
         assert authenticate(home, username="admin2", password=PASSWORD) is not None  # known: ok
 
     def test_attempts_counted_before_password_check(self) -> None:
-        User.objects.create_user("racer", password=PASSWORD)
+        create_user("racer", password=PASSWORD)
         request = RequestFactory().post("/login", REMOTE_ADDR="203.0.113.50")
         decisions = [security.register_attempt("racer", "203.0.113.50") for _ in range(12)]
         assert [d.allowed for d in decisions].count(True) == security.PAIR_LIMIT
@@ -479,7 +479,7 @@ class TestSecurityReviewFixes:
     def test_deleting_user_removes_their_arango_data(
         self, client: Client, events: StandardDatabase
     ) -> None:
-        owner = User.objects.create_user("leaver", password=PASSWORD)
+        owner = create_user("leaver", password=PASSWORD)
         client.force_login(owner)
         client.post(f"{API}/alert-rules", {"name": "r", "conditions": {"tsunami_only": True}},
                     content_type="application/json")  # fmt: skip

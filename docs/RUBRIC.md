@@ -18,7 +18,7 @@ backfill) and from the committed test and benchmark runs.
 | 3NF wording | canonical event vs immutable revisions vs content-addressed raw payloads vs derived region and network entities; source values never overwritten by derived values | ARCHITECTURE.md "Relational rubric mapping", ADR-010 |
 | Complex queries | 47 named AQL queries: 16 analytics aggregates, filtered/sorted/paginated search, geo radius + bbox, 2-hop graph traversals, percentiles, subqueries, ArangoSearch full text | `docs/AQL_QUERIES.md` (generated with live EXPLAIN plans) |
 | Views | ArangoSearch view `events_search` (place + derived region, `text_en` analyzer, primary sort) | `EVENTS_SEARCH_VIEW_PROPERTIES`, Explorer "Place contains" |
-| Trigger / procedure wording | none claimed. Equivalent logic is service code: the ingestion pipeline, the in-transaction alert observer and Celery jobs | `apps/ingestion/pipeline.py`, `apps/alerts/observer.py` |
+| Trigger / procedure wording | none claimed. Equivalent logic is service code: the ingestion pipeline, the in-transaction alert observer and background jobs (`apps.jobs`) | `apps/ingestion/pipeline.py`, `apps/alerts/observer.py` |
 | Transactions | stream transaction per record: canonical upsert + revision append + identity claims + edges + alert matches, with conflict retry | `apps/core/arango/transactions.py`, `IngestionPipeline._apply_in_txn`, ADR-003 |
 | Indexes | persistent (incl. composite, array and covering with stored values), geo (GeoJSON), TTL, unique; every one justified by a query plan | `schema.py`, AQL_QUERIES.md index table, ADR-012 |
 | 500+ records | 2,256 events, 2,278 revisions, 2,325 raw payloads, 2,256 + 2,256 edges, 120 regions, 12 networks, 57 ingestion runs | `manage.py backfill`, `/operations/` |

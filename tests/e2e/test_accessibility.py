@@ -12,9 +12,9 @@ from typing import Any
 
 import pytest
 from axe_playwright_python.sync_playwright import Axe
-from django.contrib.auth.models import User
 from playwright.sync_api import Page, expect
 
+from apps.accounts.identity import ArangoUser
 from tests.e2e.conftest import log_in, settle
 
 WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
@@ -85,14 +85,14 @@ def test_event_detail_passes_axe_on_every_tab(ui: Page, theme: str) -> None:
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 @pytest.mark.parametrize("path", SIGNED_IN)
-def test_signed_in_pages_pass_axe(ui: Page, user: User, path: str, theme: str) -> None:
+def test_signed_in_pages_pass_axe(ui: Page, user: ArangoUser, path: str, theme: str) -> None:
     ui.emulate_media(color_scheme=theme)
     log_in(ui, user.username)
     ui.goto(path)
     assert audit(ui) == []
 
 
-def test_operations_passes_axe(ui: Page, staff: User) -> None:
+def test_operations_passes_axe(ui: Page, staff: ArangoUser) -> None:
     log_in(ui, staff.username)
     ui.goto("/operations/")
     assert audit(ui) == []

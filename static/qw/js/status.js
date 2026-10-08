@@ -32,7 +32,7 @@
     window.QW.fill(el, h("dl", { class: "qw-kv" },
       h("dt", {}, "Overall"), h("dd", {}, badge(data.status === "ok", data.status === "ok" ? "operational" : "degraded")),
       h("dt", {}, "Database (ArangoDB)"), h("dd", {}, badge(data.database === "up", data.database)),
-      h("dt", {}, "Cache and queue (Redis)"), h("dd", {}, badge(data.cache === "up", data.cache)),
+      h("dt", {}, "Shared state and job queue"), h("dd", {}, badge(data.cache === "up", data.cache)),
       h("dt", {}, "Checked"), h("dd", {}, data.checked_at ? fmt.utc(data.checked_at) : "—")));
   }
 

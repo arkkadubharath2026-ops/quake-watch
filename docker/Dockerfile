@@ -17,6 +17,8 @@ ARG APP_VERSION=dev
 ENV QW_APP_VERSION=${APP_VERSION}
 
 # collectstatic needs importable settings; placeholder values are build-time only.
+# /data/auth: mount point of the legacy SQLite volume (read-only) until it is retired after
+# `migrate_auth_to_arango` is verified (ADR-015). Nothing at runtime reads it.
 RUN QW_SECRET_KEY=build-only-secret-key-not-used-at-runtime-000000000000 \
     QW_ARANGO_PASSWORD=build-only \
     QW_ENV=development \

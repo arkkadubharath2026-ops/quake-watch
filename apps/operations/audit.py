@@ -24,6 +24,12 @@ ACTIONS = (
     "auth.login_locked",
     "auth.signup",
     "operations.permission_denied",
+    "accounts.is_staff_changed",
+    "accounts.is_active_changed",
+    "accounts.password_changed",
+    "accounts.deleted",
+    "accounts.superuser_created",
+    "accounts.migrated_from_sqlite",
 )
 
 

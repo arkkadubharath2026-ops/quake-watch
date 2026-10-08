@@ -7,7 +7,7 @@ the same). Never edit percentages by hand — they are computed.
 
 ## L0 Harness
 - [x] Repository layout, pyproject (ruff, mypy strict, pytest markers), requirements pinned
-- [x] Docker Compose: ArangoDB, Redis, shared app image for web/worker/beat
+- [x] Docker Compose: ArangoDB, shared app image for web/worker/scheduler (Redis removed by ADR-014)
 - [x] Claude tooling: CLAUDE.md, agents, skills, hooks (secrets guard, ruff on edit)
 - [x] Graphify knowledge graph + post-commit rebuild
 - [x] Dependency register (docs/DEPENDENCIES.md) and LF line-ending policy
@@ -23,8 +23,8 @@ the same). Never edit percentages by hand — they are computed.
 - [x] USGS adapters (summary, catalog, detail) behind httpx-only boundary, recorded contract fixtures
 - [x] Normaliser and versioned revision policy with tolerances
 - [x] Transactional pipeline: identity claims, revisions, merges, dead letters, fast path
-- [x] Resilience: jittered backoff, Retry-After, Redis circuit breaker, provenance manifests
-- [x] Celery sync/backfill/enrichment tasks with checkpoints, split windows, idempotency
+- [x] Resilience: jittered backoff, Retry-After, shared circuit breaker (ArangoDB, ADR-014), provenance manifests
+- [x] Background sync/backfill/enrichment jobs with checkpoints, split windows, idempotency (Celery, since ADR-014 the ArangoDB job queue `apps.jobs`)
 - [x] Verified against real USGS data (live feed + 30-day backfill)
 
 ## L3 Query & API

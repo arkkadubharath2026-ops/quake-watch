@@ -1,0 +1,72 @@
+# ADR-014: ArangoDB is the only stateful service (leases, shared state, job queue)
+
+- **Status:** Accepted — approved by the project owner 2026-10-08 (owner directive: "ArangoDB must become the only database/stateful
+  persistence layer"; decisions P1 fail-closed, P2 CLI shares leases, P4 server time approved)
+- **Date:** 2026-10-07
+- **Supersedes:** the Redis/Celery parts of ADR-009 and ADR-013 (Redis "broker/cache only")
+
+## Context
+Redis held five responsibilities: job locks, the Django cache (DRF throttles, login brute-force
+counters, analytics/diagnostics caches, the `cached_db` session layer), operational metrics, the
+shared circuit breaker, and the Celery broker. Celery workers/beat ran ingestion, backfill,
+enrichment and recovery. Every responsibility has correctness requirements beyond "store a value":
+atomic `SET NX`/`INCR`, TTL expiry, at-most-one execution, acks-late redelivery, periodic ticks.
+
+## Decision
+Replace each responsibility with an ArangoDB design that preserves its semantics:
+
+| Responsibility | Replacement | Concurrency guarantee |
+|---|---|---|
+| Job locks | `job_leases` (`apps/core/arango/leases.py`) | one AQL statement per op; fencing token; server-time expiry |
+| Django cache | `ArangoCache` (`cache_entries`) | `add` = insert-if-absent-or-expired, `incr` = server-side update; TTL index GC |
+| Metrics | buffered per process, flushed atomically (`metric_counters`, `metric_series`) | increments add up across processes; no per-request write |
+| Circuit breaker | `circuit_breakers` (`breaker_store.py`) | single-statement failure count / probe claim; fails open |
+| Celery + beat | `apps.jobs`: `jobs`, `job_schedules`, `run_worker`, `run_scheduler` | atomic claim, fenced completion, lease heartbeat, reaper, per-tick schedule claim |
+
+All shared-state statements run through `run_atomic`: ArangoDB executes one AQL statement as one
+transaction, a racing writer gets a write-write conflict (1200) or unique violation (1210), and the
+statement is re-run against the committed state with full-jitter exponential backoff. Hot single
+documents (counters) get a larger re-run budget.
+
+Job execution: one forked child per job, parent heartbeats the lease (60 s, every 15 s) and
+enforces the hard time limit; children die with the parent (`PR_SET_PDEATHSIG`); a lost worker's
+job is re-queued by any live worker once its lease lapses, and dead-lettered after the crash
+allowance. `Retry` re-queues with backoff, exhausted retries dead-letter, other exceptions fail
+permanently (Celery semantics). Graceful shutdown finishes running jobs within a grace period and
+releases the rest without consuming an attempt.
+
+## Consequences
+- One stateful service to deploy, back up and secure (Render no longer needs managed Redis).
+- Latency (measured, see [MIGRATION_PERFORMANCE.md](../MIGRATION_PERFORMANCE.md)): anonymous API reads at
+  parity after moving key operations to the document API and rate limits to one atomic statement;
+  signed-in requests ~2.5-4.5 ms slower (ArangoDB key op ~0.9 ms vs Redis ~0.16 ms); metrics left the
+  hot path entirely (buffered). All far below the PRD p95 target.
+- Job pickup is polling (default 1 s) instead of broker push: up to ~1 s extra start latency for a
+  job, negligible for minute-scale ingestion. Fork-per-job costs a few ms per job, also negligible
+  for these jobs; very high rates of tiny jobs would need a pre-forked pool.
+- Cross-process metrics become visible after at most one flush interval (5 s).
+- `tests/architecture` forbids importing redis/celery/kombu anywhere in `apps/` or `config/`.
+
+## Relation to ESD / PRD (owner decision 2026-10-08)
+ESD.md and PRD.md are not rewritten. Their *intended behaviour* is preserved: scheduled USGS sync,
+checkpointed backfill, enrichment with retries, recovery of stalled work, throttling, login lockout,
+circuit breaking, metrics and health endpoints all behave as specified. Where the ESD names Celery
+and Redis (§3 stack, §13 reliability, §18 deployment profile), this ADR records the replacement
+mechanism; no new persistence technology was introduced — the replacement is the ESD's own primary
+database, ArangoDB. Where this ADR and the ESD differ on *technology*, this ADR governs; on
+*behaviour*, the ESD/PRD remain the source of truth and the tests enforce them.
+
+## Intentionally retained historical wording
+These documents still name Redis, Celery or SQLite on purpose; they are not runtime references:
+- `ESD.md`, `PRD.md` — the specification. CLAUDE.md forbids silently altering them; this ADR and ADR-015
+  record how the technology changed while the specified behaviour is kept (see "Relation to ESD / PRD").
+- `ADR-009` (superseded by ADR-015) and the pre-2026-10-07 parts of `ADR-013` — decision records stay as
+  written; their status lines point here.
+- `SECURITY_REVIEW.md` — a dated log of past findings; M2 is annotated with today's implementation.
+- `BENCHMARKS.md` — generated by `arango_benchmark --write` (not hand-edited); it never measured Redis.
+- Docstrings in `apps/core/arango/*`, `apps/jobs/*` that say what a module *replaces* ("replaces the Redis
+  cache", "Celery-compatible name") — kept as orientation for readers who know the old design.
+- `apps/accounts/management/commands/migrate_auth_to_arango.py` — the one-time, read-only SQLite reader
+  (stdlib `sqlite3`, `mode=ro`) and the read-only `auth_data` mount, both removed when the SQLite volume
+  is retired (ADR-015 deployment step 3).
+

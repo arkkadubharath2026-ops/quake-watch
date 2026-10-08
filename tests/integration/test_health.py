@@ -19,7 +19,7 @@ def test_ready_checks_dependencies(client: Client, arango_db: StandardDatabase) 
     assert response.status_code == 200, body
     assert body["checks"]["arangodb"]["ok"] is True
     assert body["checks"]["schema"]["ok"] is True
-    assert body["checks"]["redis"]["ok"] is True
+    assert set(body["checks"]) == {"arangodb", "schema"}  # ArangoDB is the only dependency
 
 
 def test_ready_reports_schema_drift(client: Client, arango_db: StandardDatabase) -> None:

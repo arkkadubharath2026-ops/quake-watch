@@ -327,7 +327,8 @@ class TestOperationalRecovery:
         assert run is not None
         assert run["status"] == "abandoned"
 
-    def test_job_lock_is_exclusive(self) -> None:
+    def test_job_lock_is_exclusive(self, arango_db: StandardDatabase) -> None:
+        # Leases live in ArangoDB (job_leases) since Phase 1a, so the test needs the database.
         with (
             job_lock("test-exclusive", ttl_seconds=30) as first,
             job_lock("test-exclusive", ttl_seconds=30) as second,

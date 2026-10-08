@@ -9,7 +9,6 @@ class CoreConfig(AppConfig):
     def ready(self) -> None:
         from django.utils.module_loading import autodiscover_modules
 
-        from apps.core import task_context  # noqa: F401  (registers Celery correlation-id signals)
-
         # Import every app's repository module so its NamedQuery objects join the AQL catalog.
         autodiscover_modules("repository")
+        from apps.core.arango import leases  # noqa: F401  (registers the job-lease queries)

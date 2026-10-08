@@ -12,12 +12,12 @@ from typing import Any
 
 import pytest
 from arango.database import StandardDatabase
-from django.contrib.auth.models import User
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
 from django.test import Client
 
 from apps.accounts import security
+from apps.accounts.identity import ArangoUser, create_user, get_by_username
 from apps.ingestion.normalizer import parse_feed
 from apps.ingestion.pipeline import IngestionPipeline
 from tests.conftest import load_fixture
@@ -37,13 +37,13 @@ def events(arango_db: StandardDatabase) -> Iterator[StandardDatabase]:
 
 
 @pytest.fixture
-def user(db: None) -> User:
-    return User.objects.create_user("pageuser", password=PASSWORD)
+def user(arango_db: StandardDatabase) -> ArangoUser:
+    return create_user("pageuser", password=PASSWORD)
 
 
 @pytest.fixture
-def staff(db: None) -> User:
-    return User.objects.create_user("pagestaff", password=PASSWORD, is_staff=True)
+def staff(arango_db: StandardDatabase) -> ArangoUser:
+    return create_user("pagestaff", password=PASSWORD, is_staff=True)
 
 
 def html(response: Any) -> str:
@@ -142,13 +142,13 @@ class TestAuthGating:
 
     @pytest.mark.parametrize("path", USER_PAGES)
     def test_signed_in_user_sees_user_pages(
-        self, client: Client, arango_db: StandardDatabase, user: User, path: str
+        self, client: Client, arango_db: StandardDatabase, user: ArangoUser, path: str
     ) -> None:
         client.force_login(user)
         assert client.get(path).status_code == 200
 
     def test_operations_is_403_for_non_staff(
-        self, client: Client, arango_db: StandardDatabase, user: User
+        self, client: Client, arango_db: StandardDatabase, user: ArangoUser
     ) -> None:
         client.force_login(user)
         r = client.get("/operations/")
@@ -156,7 +156,7 @@ class TestAuthGating:
         assert "staff only" in html(r)
 
     def test_operations_for_staff_and_nav_shows_it(
-        self, client: Client, arango_db: StandardDatabase, staff: User
+        self, client: Client, arango_db: StandardDatabase, staff: ArangoUser
     ) -> None:
         client.force_login(staff)
         r = client.get("/operations/")
@@ -166,7 +166,7 @@ class TestAuthGating:
 
 class TestAccounts:
     def test_signup_creates_account_and_signs_in(
-        self, client: Client, arango_db: StandardDatabase, db: None
+        self, client: Client, arango_db: StandardDatabase
     ) -> None:
         r = client.post(
             "/accounts/signup/",
@@ -174,11 +174,11 @@ class TestAccounts:
         )
         assert r.status_code == 302
         assert r.headers["Location"] == "/"
-        assert User.objects.filter(username="newperson").exists()
+        assert get_by_username("newperson") is not None
         assert "_auth_user_id" in client.session
 
     def test_signup_validation_errors_are_linked_to_fields(
-        self, client: Client, arango_db: StandardDatabase, db: None
+        self, client: Client, arango_db: StandardDatabase
     ) -> None:
         r = client.post(
             "/accounts/signup/", {"username": "x", "password1": "short", "password2": "other"}
@@ -187,10 +187,10 @@ class TestAccounts:
         page = html(r)
         assert 'aria-invalid="true"' in page
         assert 'aria-describedby="id_password2-error' in page
-        assert not User.objects.filter(username="x").exists()
+        assert get_by_username("x") is None
 
     def test_login_and_post_only_logout(
-        self, client: Client, arango_db: StandardDatabase, user: User
+        self, client: Client, arango_db: StandardDatabase, user: ArangoUser
     ) -> None:
         cache.clear()
         r = client.post(
@@ -203,7 +203,7 @@ class TestAccounts:
         assert "_auth_user_id" not in client.session
 
     def test_login_rejects_offsite_next(
-        self, client: Client, arango_db: StandardDatabase, user: User
+        self, client: Client, arango_db: StandardDatabase, user: ArangoUser
     ) -> None:
         cache.clear()
         r = client.post(
@@ -214,7 +214,7 @@ class TestAccounts:
         assert r.headers["Location"] == "/"
 
     def test_lockout_is_explained_to_the_user(
-        self, client: Client, arango_db: StandardDatabase, user: User
+        self, client: Client, arango_db: StandardDatabase, user: ArangoUser
     ) -> None:
         cache.clear()
         for _ in range(security.PAIR_LIMIT):
@@ -226,7 +226,7 @@ class TestAccounts:
         cache.clear()
 
     def test_wrong_password_shows_generic_error(
-        self, client: Client, arango_db: StandardDatabase, user: User
+        self, client: Client, arango_db: StandardDatabase, user: ArangoUser
     ) -> None:
         cache.clear()
         r = client.post("/accounts/login/", {"username": "pageuser", "password": "wrong"})

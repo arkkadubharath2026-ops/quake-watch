@@ -32,11 +32,12 @@ resolution as an ADR in `docs/adr/`.
 
 ## Architecture (see docs/ARCHITECTURE.md)
 
-Modular Django monolith + Celery worker/beat + ArangoDB (all domain data) + SQLite (Django auth/sessions
-only, ADR-009) + Redis (broker/cache only).
+Modular Django monolith + ArangoDB as the **only** database/stateful service (ADR-014/015): domain
+data, accounts and sessions, the durable job queue + scheduler (`apps.jobs`, replaces Celery), cache,
+metrics, circuit breaker and job leases. No Redis, no Celery, no SQLite (`DATABASES = {}`).
 
 ```
-config/            settings (typed env via pydantic-settings), urls, celery app
+config/            settings (typed env via pydantic-settings), urls
 apps/core/         shared kernel: arango/ (client, schema, migrations, transactions), logging,
                    errors, middleware (correlation id, timing), pagination, clock
 apps/geo/          geodesic math, bbox/radius validation, region normalisation (pure)
@@ -47,7 +48,8 @@ apps/alerts/       rule domain + matcher (pure), repository, API, evaluation tas
 apps/analytics/    aggregate AQL + API
 apps/research/     snapshots, manifests, checksums, exports
 apps/operations/   health/freshness, ingestion dashboard, audit log, admin actions
-apps/accounts/     Django auth (ORM, SQLite)
+apps/jobs/         durable job queue: registry (@task/.delay), repository, worker, scheduler
+apps/accounts/     ArangoDB accounts + session engine, throttled backend, user admin commands
 ```
 
 ### Boundary rules (enforced by tests/architecture)
@@ -56,11 +58,12 @@ apps/accounts/     Django auth (ORM, SQLite)
 - Only `apps/ingestion/adapters/` imports `httpx`.
 - AQL always uses bind variables; sort fields come from allow-lists.
 - Source values are never overwritten by derived values.
+- No module in `apps/` or `config/` imports redis, celery or kombu; no ORM queries (`DATABASES = {}`).
 
 ## Commands
 
 ```bash
-docker compose up -d arangodb redis                 # infra for dev/tests
+docker compose up -d arangodb                       # the only infra for dev/tests
 .venv/Scripts/python manage.py arango_migrate       # idempotent collections/indexes/views/graph
 .venv/Scripts/python manage.py runserver
 .venv/Scripts/python -m pytest -m "not e2e and not perf"
@@ -71,10 +74,10 @@ docker compose up -d arangodb redis                 # infra for dev/tests
 ```
 
 ## Project tooling (.claude/)
-- Agents: `arangodb-reviewer` (project-specific), `python-reviewer`, `django-reviewer` (ORM advice
-  applies only to `apps/accounts`), `security-reviewer`, `silent-failure-hunter`, `a11y-architect` (ECC).
+- Agents: `arangodb-reviewer` (project-specific), `python-reviewer`, `django-reviewer` (its ORM advice does not
+  apply: there is no ORM, ADR-015), `security-reviewer`, `silent-failure-hunter`, `a11y-architect` (ECC).
 - Skills: `quakewatch-verify` (milestone gate), `architecture-decision-records`, `django-security`,
-  `django-celery`, `frontend-a11y` (ECC).
+  `django-celery` (legacy: Celery was replaced by `apps.jobs`, ADR-014), `frontend-a11y` (ECC).
 - Hooks: ruff format/fix on every edited .py file; writes to `.env`/key files are blocked.
 
 ## Safety wording

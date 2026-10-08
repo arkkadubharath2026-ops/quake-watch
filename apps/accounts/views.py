@@ -1,13 +1,14 @@
-"""Sign up, log in (with lockout feedback) and log out. Django auth lives in SQLite (ADR-009)."""
+"""Sign up, log in (with lockout feedback) and log out. Accounts live in ArangoDB (ADR-015)."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.views import LoginView
+from django.core.exceptions import ValidationError
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
@@ -42,10 +43,15 @@ def signup(request: HttpRequest) -> HttpResponse:
         return redirect("pages:dashboard")
     form = SignupForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        user = form.save()
-        login(request, user, backend="apps.accounts.backends.ThrottledModelBackend")
-        messages.success(request, f"Welcome, {user.get_username()}. Your account is ready.")
-        return redirect("pages:dashboard")
+        try:
+            user = form.save()
+        except ValidationError as error:  # a concurrent sign-up took the username
+            form.add_error("username", error)
+        else:
+            backend = "apps.accounts.backends.ThrottledModelBackend"
+            login(request, cast(Any, user), backend=backend)  # stubs expect the ORM User
+            messages.success(request, f"Welcome, {user.get_username()}. Your account is ready.")
+            return redirect("pages:dashboard")
     status = 400 if request.method == "POST" else 200
     context = {"form": form, "nav_active": "signup"}
     return render(request, "accounts/signup.html", context, status=status)

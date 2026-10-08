@@ -11,7 +11,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.core import metrics
@@ -21,6 +20,7 @@ from apps.core.arango.client import get_db, ping
 from apps.core.arango.query import explain, indexes_used
 from apps.core.clock import to_iso, utc_now
 from apps.core.errors import ValidationFailed
+from apps.core.throttling import ScopedRateThrottle
 from apps.ingestion.adapters.usgs import build_usgs_client, usgs_breaker
 from apps.ingestion.services import BackfillService
 from apps.ingestion.tasks import run_backfill, sync_feed

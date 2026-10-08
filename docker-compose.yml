@@ -1,9 +1,10 @@
-# Local / college-demo deployment profile (ESD §18): web, worker, beat, redis, arangodb.
+# Local / college-demo deployment profile (ESD §18): web, worker, scheduler, arangodb.
+# ArangoDB is the only stateful service (data, jobs, schedules, cache, metrics, leases).
 # Secrets come from .env (never committed). See .env.example.
 name: quakewatch
 
 x-app: &app
-  image: quakewatch-app:${APP_VERSION:-dev}  # one image for web/worker/beat: they can never drift
+  image: quakewatch-app:${APP_VERSION:-dev}  # one image for web/worker/scheduler: never drift
   build:
     context: .
     dockerfile: docker/Dockerfile
@@ -12,14 +13,12 @@ x-app: &app
   env_file: .env
   environment:
     QW_ARANGO_URL: http://arangodb:8529
-    QW_REDIS_URL: redis://redis:6379/0
-    QW_AUTH_DB_PATH: /data/auth/auth.sqlite3
   volumes:
-    - auth_data:/data/auth
+    # Legacy SQLite auth store (pre ADR-015), read-only: source for `manage.py migrate_auth_to_arango`.
+    # Remove this mount and the volume only after the migration is verified.
+    - auth_data:/data/auth:ro
   depends_on:
     arangodb:
-      condition: service_healthy
-    redis:
       condition: service_healthy
   restart: unless-stopped
 
@@ -41,18 +40,6 @@ services:
       retries: 30
     restart: unless-stopped
 
-  redis:
-    image: redis:7.4-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
-    ports:
-      - "127.0.0.1:6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    restart: unless-stopped
-
   web:
     <<: *app
     command: ["/app/docker/entrypoint.sh", "web"]
@@ -68,9 +55,9 @@ services:
     <<: *app
     command: ["/app/docker/entrypoint.sh", "worker"]
 
-  beat:
+  scheduler:
     <<: *app
-    command: ["/app/docker/entrypoint.sh", "beat"]
+    command: ["/app/docker/entrypoint.sh", "scheduler"]
 
 volumes:
   arango_data:

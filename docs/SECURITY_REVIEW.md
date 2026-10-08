@@ -9,7 +9,7 @@ All findings fixed; each has a regression test in
 | # | Severity | Finding | Fix |
 |---|---|---|---|
 | M1 | Medium | DRF throttles and login lockout keyed on spoofable `X-Forwarded-For` (first hop) | `QW_NUM_PROXIES` → DRF `NUM_PROXIES`; `client_ip` uses the proxy-appended right-most hop, else `REMOTE_ADDR` |
-| M2 | Medium | Lockout: anyone could lock any account; no per-address cap (spraying); check-then-count race | Atomic count-before-verify (Redis INCR); per-address cap across usernames; per-username cap skipped for addresses the user recently logged in from |
+| M2 | Medium | Lockout: anyone could lock any account; no per-address cap (spraying); check-then-count race | Atomic count-before-verify (Redis INCR at the time; since ADR-014 an atomic ArangoDB `incr` with the same semantics, re-tested in `test_shared_state.py`); per-address cap across usernames; per-username cap skipped for addresses the user recently logged in from |
 | L1 | Low | Unlimited research snapshots per user | 20 per user (serialised cap) + `snapshot_create` throttle 10/hour |
 | L2 | Low | Admin actions audited only after success; failures/denials unaudited; raw request stored | `requested` entry before acting, `ok`/`failed` after; `operations.permission_denied` audited; only validated fields stored |
 | L3 | Low | 5xx envelope exposed driver text (host, database) | Clients get a fixed `public_message`; details logged only |

@@ -1,7 +1,8 @@
 """Liveness / readiness probes (ESD §15).
 
 ``/health/live``  — the process is up (no dependencies checked).
-``/health/ready`` — ArangoDB reachable with the expected schema version, and Redis reachable.
+``/health/ready`` — ArangoDB (the only stateful dependency) reachable with the expected schema
+version.
 """
 
 from __future__ import annotations
@@ -10,7 +11,6 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 
-from apps.core import metrics
 from apps.core.arango.client import get_db, ping
 from apps.core.arango.migrate import applied_version
 from apps.core.arango.schema import SCHEMA_VERSION
@@ -41,10 +41,7 @@ def ready(request: HttpRequest) -> JsonResponse:
     schema_ok = schema_version == SCHEMA_VERSION
     checks["schema"] = {"ok": schema_ok, "applied": schema_version, "expected": SCHEMA_VERSION}
 
-    redis_ok = metrics.ping()
-    checks["redis"] = {"ok": redis_ok}
-
-    healthy = arango_ok and schema_ok and redis_ok
+    healthy = arango_ok and schema_ok
     return JsonResponse(
         {"status": "ok" if healthy else "unavailable", "checks": checks},
         status=200 if healthy else 503,

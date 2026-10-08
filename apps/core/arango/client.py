@@ -7,6 +7,7 @@ python-arango (enforced by tests/architecture).
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Any
 
@@ -54,6 +55,22 @@ def _connect(name: str) -> StandardDatabase:
 @lru_cache(maxsize=4)
 def _cached_db(name: str) -> StandardDatabase:
     return _connect(name)
+
+
+def _reset_after_fork() -> None:
+    """Give a forked child its own connections (job worker processes, multiprocessing).
+
+    python-arango shares one HTTP session pool across all handles of an ArangoClient. A child
+    that kept using the parent's pooled keep-alive sockets would interleave requests with other
+    processes on the same TCP connection and could lose a response — for example a
+    ``begin_transaction`` — leaving an exclusive stream transaction open until the server's idle
+    timeout (observed: every job lease blocked). Dropping the caches makes the child connect anew.
+    """
+    _cached_db.cache_clear()
+    get_client.cache_clear()
+
+
+os.register_at_fork(after_in_child=_reset_after_fork)
 
 
 def database_name() -> str:

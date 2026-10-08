@@ -1,7 +1,7 @@
 """Login brute-force protection (PRD NFR security: rate limits).
 
-Attempts are *counted before* the password is checked (atomic Redis INCR), so concurrent requests
-cannot slip past a limit while hashing is slow. A successful login clears the per-pair and
+Attempts are *counted before* the password is checked (atomic cache ``incr``), so concurrent
+requests cannot slip past a limit while hashing is slow. A successful login clears the per-pair and
 per-address counters. Three limits apply within a sliding-free 15-minute window:
 
 * ``PAIR_LIMIT`` attempts per (username, client address) — stops single-source guessing;
