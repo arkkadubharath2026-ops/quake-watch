@@ -122,6 +122,16 @@ Only after that, and after a backup copy of the SQLite file is stored safely, re
 `auth_data` mount and volume. Re-running the command is safe (idempotent); it refuses to overwrite a
 different user with the same id or username.
 
+### Rolling back the ArangoDB-only release (ADR-014/015)
+Schema v6 is additive (11 new collections, 10 new indexes; nothing removed), so the previous release can run
+against the same database:
+1. Pause worker and scheduler. Redeploy the previous revision (revert the migration merge on `main`).
+2. Its web entrypoint runs `migrate` and `arango_migrate`, which resets `schema_meta.version` to 2; the new
+   collections are left untouched and unused, so `/health/ready` passes again.
+3. The previous release needs Redis (`QW_REDIS_URL`) and its SQLite auth file again: **keep the Redis service and
+   the `auth_data` volume until the new release is accepted** (ADR-015 retirement criteria).
+4. Accounts created or changed after the switch exist only in `auth_users`; they are not written back to SQLite.
+
 Keep backups out of the repository (`backups/` is git-ignored; never commit dumps). After a
 restore, research snapshots still verify, because each manifest's SHA-256 covers the pinned revisions.
 
