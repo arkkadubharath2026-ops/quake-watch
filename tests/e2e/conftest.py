@@ -18,11 +18,11 @@ from dataclasses import dataclass, field
 
 import pytest
 from arango.database import StandardDatabase
-from django.contrib.auth.models import User
 from django.core.cache import cache
 from playwright.sync_api import ConsoleMessage, Page, Route
 from pytest_django.live_server_helper import LiveServer
 
+from apps.accounts.identity import ArangoUser, create_user
 from apps.ingestion.normalizer import parse_feed
 from apps.ingestion.pipeline import IngestionPipeline
 from tests.conftest import load_fixture
@@ -68,6 +68,14 @@ def seeded(arango_db: StandardDatabase) -> Iterator[StandardDatabase]:
     cache.clear()
 
 
+@pytest.fixture
+def transactional_db() -> None:
+    """pytest-django's live_server requests this to flush the ORM test database between tests.
+    There is no ORM database (ADR-015); accounts, sessions and data live in ArangoDB and are reset
+    by the ArangoDB fixtures instead."""
+    return
+
+
 @pytest.fixture(scope="session")
 def base_url(live_server: LiveServer) -> str:
     """Relative ``page.goto("/path")`` resolves against the live server (pytest-base-url)."""
@@ -93,9 +101,7 @@ def browser_errors(page: Page) -> Iterator[BrowserErrors]:
 
 
 @pytest.fixture
-def ui(
-    page: Page, seeded: StandardDatabase, transactional_db: None, browser_errors: BrowserErrors
-) -> Page:
+def ui(page: Page, seeded: StandardDatabase, browser_errors: BrowserErrors) -> Page:
     """A page on the live server over seeded data, with error collection and stubbed tiles."""
     page.set_default_timeout(10_000)
     return page
@@ -108,13 +114,13 @@ def settle(page: Page) -> None:
 
 
 @pytest.fixture
-def user(transactional_db: None) -> User:
-    return User.objects.create_user("e2e_user", password=PASSWORD)
+def user(seeded: StandardDatabase) -> ArangoUser:
+    return create_user("e2e_user", password=PASSWORD)
 
 
 @pytest.fixture
-def staff(transactional_db: None) -> User:
-    return User.objects.create_user("e2e_staff", password=PASSWORD, is_staff=True)
+def staff(seeded: StandardDatabase) -> ArangoUser:
+    return create_user("e2e_staff", password=PASSWORD, is_staff=True)
 
 
 def log_in(page: Page, username: str) -> None:

@@ -1,6 +1,6 @@
 # ADR-009: Django auth and sessions on SQLite; domain data in ArangoDB
 
-- **Status:** Accepted (decided by project owner, 2026-09-25)
+- **Status:** Superseded by ADR-015 (2026-10-07). Accepted 2026-09-25 (decided by project owner).
 
 ## Context
 PRD requires Django authentication, CSRF and secure cookies. Django's auth, session and admin

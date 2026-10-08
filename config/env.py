@@ -46,9 +46,6 @@ class AppSettings(BaseSettings):
     arango_password: SecretStr
     arango_request_timeout: float = Field(default=30.0, gt=0)
 
-    redis_url: str = "redis://127.0.0.1:6379/0"
-    auth_db_path: Path = BASE_DIR / "var" / "auth.sqlite3"
-
     usgs_base_url: str = "https://earthquake.usgs.gov"
     sync_feed: str = "all_day"
     sync_interval_seconds: int = Field(default=300, ge=60)

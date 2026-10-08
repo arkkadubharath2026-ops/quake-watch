@@ -4,6 +4,8 @@
 - httpx is imported only by apps/ingestion/adapters (external API boundary).
 - Pure domain modules (domain.py, services.py, policy/matcher modules, apps/geo) import no Django
   HTTP/DRF, no httpx and no python-arango.
+- ArangoDB is the only stateful service: no application or config module imports Redis, Celery or
+  Kombu (ADR-014).
 """
 
 from __future__ import annotations
@@ -42,6 +44,10 @@ def _imports(path: Path) -> set[str]:
 
 def _python_files() -> list[Path]:
     return [p for p in APPS.rglob("*.py") if "migrations" not in p.parts]
+
+
+def _runtime_files() -> list[Path]:
+    return _python_files() + sorted((ROOT / "config").glob("*.py"))
 
 
 def _rel(path: Path) -> str:
@@ -88,3 +94,10 @@ def test_pure_modules_have_no_framework_or_io_imports(path: Path) -> None:
     banned = ("django.http", "django.shortcuts", "rest_framework", "httpx", "arango", "redis")
     offenders = [m for m in _imports(path) if any(_starts(m, b) for b in banned)]
     assert not offenders, f"{_rel(path)} (pure module) imports {offenders}"
+
+
+@pytest.mark.parametrize("path", _runtime_files(), ids=_rel)
+def test_no_redis_or_celery_at_runtime(path: Path) -> None:
+    banned = ("redis", "celery", "kombu", "django_redis")
+    offenders = [m for m in _imports(path) if any(_starts(m, b) for b in banned)]
+    assert not offenders, f"{_rel(path)} imports {offenders}: ArangoDB is the only state store"

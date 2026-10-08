@@ -1,40 +1,82 @@
-"""Lightweight operational metrics stored in Redis.
+"""Lightweight operational metrics stored in ArangoDB.
 
-Counters are Redis hash fields; latency series keep the most recent ``MAX_SAMPLES``
-observations in a capped list, from which the Operations dashboard computes p50/p95/p99.
-Metrics are best-effort: a Redis outage is logged (rate-limited) but never breaks the
-request or job that is being measured.
+Counters and latency series (the most recent ``MAX_SAMPLES`` observations, from which the
+Operations dashboard computes p50/p95/p99) live in :mod:`apps.core.arango.metrics_store`.
+
+``incr``/``observe`` sit on hot paths (every AQL query, every API request), so they only append to
+a per-process buffer; the buffer is flushed in one atomic statement per kind when
+``FLUSH_INTERVAL_SECONDS`` has passed or ``FLUSH_MAX_PENDING`` observations are pending, when this
+process reads metrics, and at interpreter exit. Increments from concurrent processes therefore
+add up exactly; another process sees them after at most one flush interval.
+
+Metrics are best-effort: a store outage is logged (rate-limited) but never breaks the request or
+job being measured. While the store is down, counter deltas are kept (they are tiny) and the
+newest ``BUFFER_CAP`` samples per series survive; flush attempts back off for one interval.
 """
 
 from __future__ import annotations
 
+import atexit
 import math
+import os
+import threading
 import time
 from dataclasses import dataclass
-from typing import cast
+from types import ModuleType
 
-import redis
-
-from apps.core.redis_client import get_redis, key
+from apps.core.errors import DatabaseUnavailable
 from config.logging import get_logger
 
 MAX_SAMPLES = 1000
+FLUSH_INTERVAL_SECONDS = 5.0
+FLUSH_MAX_PENDING = 500
+BUFFER_CAP = 5 * MAX_SAMPLES
 _WARN_INTERVAL_SECONDS = 60.0
 
 log = get_logger(__name__)
 _last_warning = 0.0
 
 
-def _counters_key() -> str:
-    return key("metrics", "counters")
+class _Buffer:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.counters: dict[str, int] = {}
+        self.series: dict[str, list[float]] = {}
+        self.pending = 0
+        self.next_flush = time.monotonic() + FLUSH_INTERVAL_SECONDS
+
+    def take(self) -> tuple[dict[str, int], dict[str, list[float]]]:
+        """Detach the buffered data (call with ``lock`` held)."""
+        counters, series = self.counters, self.series
+        self.counters, self.series, self.pending = {}, {}, 0
+        return counters, series
+
+    def restore(self, counters: dict[str, int], series: dict[str, list[float]]) -> None:
+        """Put back data whose flush failed, ahead of anything buffered meanwhile."""
+        for name, delta in counters.items():
+            self.counters[name] = self.counters.get(name, 0) + delta
+        for name, values in series.items():
+            self.series[name] = (values + self.series.get(name, []))[-BUFFER_CAP:]
+        self.pending = sum(len(v) for v in self.series.values())
 
 
-def _series_key(name: str) -> str:
-    return key("metrics", "samples", name)
+_buffer = _Buffer()
 
 
-def _index_key() -> str:
-    return key("metrics", "series")
+def _store() -> ModuleType:
+    # Imported lazily: the store runs AQL through apps.core.arango.query, which imports this module.
+    from apps.core.arango import metrics_store
+
+    return metrics_store
+
+
+def _reset_after_fork() -> None:
+    """A forked child must not re-flush data its parent will flush."""
+    global _buffer
+    _buffer = _Buffer()
+
+
+os.register_at_fork(after_in_child=_reset_after_fork)
 
 
 def _warn(exc: Exception) -> None:
@@ -45,23 +87,49 @@ def _warn(exc: Exception) -> None:
         log.warning("metrics_backend_unavailable", error=str(exc))
 
 
-def incr(name: str, amount: int = 1) -> None:
+def flush() -> bool:
+    """Write buffered metrics; returns False (data kept) when the store is unavailable."""
+    buf = _buffer
+    with buf.lock:
+        counters, series = buf.take()
+        buf.next_flush = time.monotonic() + FLUSH_INTERVAL_SECONDS
+    if not counters and not series:
+        return True
     try:
-        get_redis().hincrby(_counters_key(), name, amount)
-    except redis.RedisError as exc:
+        _store().flush(counters, series, MAX_SAMPLES)
+    except DatabaseUnavailable as exc:
         _warn(exc)
+        with buf.lock:
+            buf.restore(counters, series)
+        return False
+    return True
+
+
+def _maybe_flush(buf: _Buffer) -> None:
+    if buf.pending >= FLUSH_MAX_PENDING or time.monotonic() >= buf.next_flush:
+        flush()
+
+
+def incr(name: str, amount: int = 1) -> None:
+    buf = _buffer
+    with buf.lock:
+        buf.counters[name] = buf.counters.get(name, 0) + amount
+    _maybe_flush(buf)
 
 
 def observe(name: str, value: float) -> None:
-    series = _series_key(name)
-    try:
-        pipe = get_redis().pipeline(transaction=False)
-        pipe.lpush(series, value)
-        pipe.ltrim(series, 0, MAX_SAMPLES - 1)
-        pipe.sadd(_index_key(), name)
-        pipe.execute()
-    except redis.RedisError as exc:
-        _warn(exc)
+    buf = _buffer
+    with buf.lock:
+        values = buf.series.setdefault(name, [])
+        values.append(float(value))
+        if len(values) > BUFFER_CAP:
+            del values[: len(values) - BUFFER_CAP]
+        else:
+            buf.pending += 1
+    _maybe_flush(buf)
+
+
+atexit.register(flush)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,12 +151,13 @@ def percentile(sorted_values: list[float], pct: float) -> float | None:
 
 
 def summarize(name: str) -> SeriesSummary:
+    flush()
     try:
-        raw = cast(list[str], get_redis().lrange(_series_key(name), 0, MAX_SAMPLES - 1))
-    except redis.RedisError as exc:
+        raw = _store().samples(name)
+    except DatabaseUnavailable as exc:
         _warn(exc)
         raw = []  # degraded: report an empty series rather than failing the caller
-    values = sorted(float(v) for v in raw)
+    values = sorted(raw)
     return SeriesSummary(
         name=name,
         count=len(values),
@@ -100,30 +169,35 @@ def summarize(name: str) -> SeriesSummary:
 
 
 def counters() -> dict[str, int]:
+    flush()
     try:
-        raw = cast(dict[str, str], get_redis().hgetall(_counters_key()))
-    except redis.RedisError as exc:
+        stored: dict[str, int] = _store().counters()
+        return stored
+    except DatabaseUnavailable as exc:
         _warn(exc)
         return {}
-    return {k: int(v) for k, v in raw.items()}
 
 
 def series_names() -> list[str]:
+    flush()
     try:
-        return sorted(cast(set[str], get_redis().smembers(_index_key())))
-    except redis.RedisError as exc:
+        names: list[str] = _store().series_names()
+        return names
+    except DatabaseUnavailable as exc:
         _warn(exc)
         return []
 
 
 def reset() -> None:
-    """Delete all metrics in the current namespace (tests and the admin reset action)."""
-    keys = [_series_key(n) for n in series_names()] + [_counters_key(), _index_key()]
-    get_redis().delete(*keys)
+    """Delete all metrics, buffered and stored (tests and the admin reset action)."""
+    with _buffer.lock:
+        _buffer.take()
+    _store().clear()
 
 
 def ping() -> bool:
     try:
-        return bool(get_redis().ping())
-    except redis.RedisError:
+        _store().ping()
+    except DatabaseUnavailable:
         return False
+    return True

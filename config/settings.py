@@ -1,7 +1,8 @@
 """Django settings for QuakeWatch.
 
-Values come from :mod:`config.env` (typed, validated). ArangoDB holds all domain data;
-the ORM database below stores only Django auth/sessions/admin (ADR-009).
+Values come from :mod:`config.env` (typed, validated). ArangoDB is the only database: domain
+data, users and sessions (ADR-015), the job queue, cache, metrics and leases. There is no ORM
+database (``DATABASES`` is empty, so any accidental ORM query fails loudly).
 """
 
 from __future__ import annotations
@@ -21,10 +22,12 @@ IS_PRODUCTION = APP.env is Environment.PRODUCTION
 IS_TEST = APP.env is Environment.TEST
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    # First, so its `createsuperuser` (ArangoDB accounts) overrides django.contrib.auth's ORM one.
+    "apps.accounts",
+    # auth: hashers, login()/logout(), forms, views, signals; contenttypes: required by auth's
+    # (unused) model classes. Neither touches a database here.
     "django.contrib.auth",
     "django.contrib.contenttypes",
-    "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
@@ -36,7 +39,7 @@ INSTALLED_APPS = [
     "apps.analytics",
     "apps.research",
     "apps.operations",
-    "apps.accounts",
+    "apps.jobs",
     "apps.web",
 ]
 
@@ -76,27 +79,22 @@ TEMPLATES = [
 ]
 
 # --- Databases -----------------------------------------------------------------------------
-# Auth/sessions only (ADR-009). Domain data lives in ArangoDB (apps.core.arango).
-APP.auth_db_path.parent.mkdir(parents=True, exist_ok=True)
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": APP.auth_db_path,
-        "OPTIONS": {"transaction_mode": "IMMEDIATE", "timeout": 5},
-    }
-}
+# None: all persistence is ArangoDB (apps.core.arango). Django's dummy backend raises on any ORM
+# query, which tests/architecture also guards against statically.
+DATABASES: dict[str, dict[str, object]] = {}
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 CACHES = {
     "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": APP.redis_url,
+        # ArangoDB-backed (apps.core.arango.cache): document API reads/writes, atomic add/incr.
+        "BACKEND": "apps.core.arango.cache.ArangoCache",
+        "LOCATION": "",
         "KEY_PREFIX": "qw-test" if IS_TEST else "qw",
         "TIMEOUT": 300,
     }
 }
 
-SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
+SESSION_ENGINE = "apps.accounts.sessions"  # ArangoDB `sessions` collection (ADR-015)
 
 # --- Auth ----------------------------------------------------------------------------------
 AUTH_PASSWORD_VALIDATORS = [
@@ -176,8 +174,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "EXCEPTION_HANDLER": "apps.core.api.exception_handler",
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
+        # anon + user rates in one atomic ArangoDB statement per request (apps.core.throttling)
+        "apps.core.throttling.DefaultRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": "120/min",
@@ -194,25 +192,17 @@ REST_FRAMEWORK = {
     "URL_FORMAT_OVERRIDE": None,
 }
 
-# --- Celery --------------------------------------------------------------------------------
-CELERY_BROKER_URL = APP.redis_url
-CELERY_RESULT_BACKEND = None
-CELERY_TASK_IGNORE_RESULT = True
-CELERY_TASK_ACKS_LATE = True
-CELERY_TASK_REJECT_ON_WORKER_LOST = True
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1
-CELERY_TASK_TIME_LIMIT = 15 * 60
-CELERY_TASK_SOFT_TIME_LIMIT = 14 * 60
-CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 20 * 60}
-CELERY_TIMEZONE = "UTC"
-CELERY_WORKER_HIJACK_ROOT_LOGGER = False  # keep structlog formatting in workers
-CELERY_BEAT_SCHEDULE = {
+# --- Background jobs (apps.jobs: ArangoDB queue, worker, scheduler) ------------------------
+# Periodic entries: one job per interval tick however many schedulers run; ``expires`` drops a
+# tick that waited too long in the queue (never piles up).
+JOBS_EAGER = False
+JOBS_SCHEDULE = {
     "sync-usgs-feed": {
         "task": "ingestion.sync_feed",
-        "schedule": APP.sync_interval_seconds,
-        "options": {"expires": APP.sync_interval_seconds},  # drop stale ticks, never pile up
+        "interval": APP.sync_interval_seconds,
+        "expires": APP.sync_interval_seconds,
     },
-    "ingestion-recovery": {"task": "ingestion.recover", "schedule": 600},
+    "ingestion-recovery": {"task": "ingestion.recover", "interval": 600, "expires": 600},
 }
 
 # Observers participating in the ingestion transaction (dotted paths; see apps.ingestion.observers)

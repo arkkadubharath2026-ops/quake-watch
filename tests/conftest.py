@@ -1,8 +1,11 @@
 """Shared pytest fixtures.
 
-Integration tests run against a real ArangoDB (``docker compose up -d arangodb redis``) using the
+Integration tests run against a real ArangoDB (``docker compose up -d arangodb``) using the
 isolated ``<db>_test`` database, which is created and migrated once per session and truncated
 between tests. Nothing in the integration suite mocks the database.
+
+``dead_arango_db`` is a handle on a port where nothing listens: outage tests use it to inject a
+real connection failure into the shared-state stores (cache, metrics, circuit breaker).
 """
 
 from __future__ import annotations
@@ -33,6 +36,12 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 @pytest.fixture(scope="session")
+def django_db_setup() -> None:
+    """No ORM test database to create: DATABASES is empty (ADR-015)."""
+    return
+
+
+@pytest.fixture(scope="session")
 def arango_session_db() -> Iterator[StandardDatabase]:
     name = database_name()
     assert name.endswith("_test"), "integration tests must never touch a non-test database"
@@ -40,6 +49,7 @@ def arango_session_db() -> Iterator[StandardDatabase]:
     db = ensure_database(name)
     apply_schema(db)
     yield db
+    metrics.flush()  # write buffered metrics while the database still exists (not at exit)
     drop_database(name)
 
 
@@ -54,10 +64,22 @@ def arango_db(arango_session_db: StandardDatabase) -> StandardDatabase:
 
 
 @pytest.fixture
-def clean_metrics() -> Iterator[None]:
+def clean_metrics(arango_session_db: StandardDatabase) -> Iterator[None]:
     metrics.reset()
     yield
     metrics.reset()
+
+
+@pytest.fixture
+def dead_arango_db() -> StandardDatabase:
+    from arango.client import ArangoClient
+    from arango.http import DefaultHTTPClient
+
+    client = ArangoClient(
+        hosts="http://127.0.0.1:9",
+        http_client=DefaultHTTPClient(request_timeout=2, retry_attempts=0),
+    )
+    return client.db("quakewatch_test", username="root", password="unused", verify=False)
 
 
 def load_fixture(name: str) -> bytes:

@@ -1,4 +1,4 @@
-"""Celery tasks (eager) and management commands on real ArangoDB/Redis, simulated USGS upstream."""
+"""Job tasks (eager) and management commands on real ArangoDB, simulated USGS upstream."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from io import StringIO
+from typing import Any
 
 import httpx
 import pytest
@@ -221,3 +222,107 @@ class TestCommands:
         assert "shakemap" in out.getvalue()
         with pytest.raises(CommandError, match="not found"):
             call_command("enrich_event", "usgs_nope", stdout=StringIO())
+
+
+class TestCommandLeases:
+    """P2: the CLI commands share the scheduled jobs' leases (real ArangoDB, fake upstream)."""
+
+    def test_cli_sync_holds_the_lease_scheduled_runs_use(
+        self,
+        arango_db: StandardDatabase,
+        fake_usgs: Callable[[Handler], None],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from apps.ingestion.management.commands import sync_feed as command
+
+        seen: dict[str, Any] = {}
+
+        class Probe(command.FeedSyncService):  # type: ignore[misc,name-defined]
+            def run(self, feed: str) -> Any:
+                # While the CLI runs, the scheduled task and a second CLI must both be refused.
+                seen["task"] = tasks.sync_feed(feed)
+                with job_lock(tasks.sync_lease_name(feed), ttl_seconds=60) as other:
+                    seen["other"] = other
+                return super().run(feed)
+
+        monkeypatch.setattr(command, "FeedSyncService", Probe)
+        call_command("sync_feed", "--feed", "all_day", stdout=StringIO())
+        assert seen == {"task": {"status": "skipped_locked"}, "other": False}
+        assert arango_db.collection(s.JOB_LEASES).count() == 0  # released afterwards
+
+    def test_cli_sync_refuses_while_a_scheduled_sync_holds_the_lease(
+        self, arango_db: StandardDatabase, fake_usgs: Callable[[Handler], None]
+    ) -> None:
+        with (
+            job_lock(tasks.sync_lease_name("all_day"), ttl_seconds=60),
+            pytest.raises(CommandError, match="already running"),
+        ):
+            call_command("sync_feed", "--feed", "all_day", stdout=StringIO())
+        assert arango_db.collection(s.INGESTION_RUNS).count() == 0  # nothing ran
+
+    def test_cli_backfill_refuses_while_the_task_holds_the_job(
+        self, arango_db: StandardDatabase, fake_usgs: Callable[[Handler], None]
+    ) -> None:
+        start = datetime(2026, 9, 1, tzinfo=UTC)
+        job_id = BackfillService(arango_db, UsgsClient.__new__(UsgsClient)).create_job(
+            BackfillRequest(start, start + timedelta(days=2), 4.5, 1, "test")
+        )
+        with (
+            job_lock(tasks.backfill_lease_name(job_id), ttl_seconds=60),
+            pytest.raises(CommandError, match=f"already running.*--resume {job_id}"),
+        ):
+            call_command("backfill", f"--resume={job_id}", stdout=StringIO())
+        job = RunRepository(arango_db).get_backfill_job(job_id)
+        assert job is not None
+        assert job["windows_completed"] == 0  # no window processed
+
+    def test_cli_backfill_holds_the_job_lease_during_each_window(
+        self,
+        arango_db: StandardDatabase,
+        fake_usgs: Callable[[Handler], None],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from apps.ingestion.management.commands import backfill as command
+
+        refused: list[Any] = []
+
+        class Probe(command.BackfillService):  # type: ignore[misc,name-defined]
+            def run_job(self, job_id: str, *, max_windows: int | None = None) -> Any:
+                refused.append(tasks.run_backfill.apply(args=[job_id]).get())
+                return super().run_job(job_id, max_windows=max_windows)
+
+        monkeypatch.setattr(command, "BackfillService", Probe)
+        out = StringIO()
+        call_command(
+            "backfill", "--start=2026-09-01", "--end=2026-09-03", "--window-days=1", stdout=out
+        )
+        assert "completed" in out.getvalue()
+        assert refused == [{"status": "skipped_locked"}] * 2  # one per window, task refused
+        assert arango_db.collection(s.JOB_LEASES).count() == 0
+
+    def test_cli_commands_fail_closed_when_the_lock_store_is_unavailable(
+        self,
+        arango_db: StandardDatabase,
+        fake_usgs: Callable[[Handler], None],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from apps.core import locks
+        from apps.core.errors import DatabaseUnavailable
+
+        class Dead:
+            def acquire(self, *args: Any, **kwargs: Any) -> Any:
+                raise DatabaseUnavailable("ArangoDB unreachable")
+
+        monkeypatch.setattr(locks, "_repository", Dead)
+        monkeypatch.setattr(locks, "_sleep", lambda s: None)
+        with pytest.raises(CommandError, match="was not run"):
+            call_command("sync_feed", "--feed", "all_day", stdout=StringIO())
+        with pytest.raises(CommandError, match="was not run"):
+            call_command(
+                "backfill",
+                "--start=2026-09-01",
+                "--end=2026-09-02",
+                "--window-days=1",
+                stdout=StringIO(),
+            )
+        assert arango_db.collection(s.INGESTION_RUNS).count() == 0

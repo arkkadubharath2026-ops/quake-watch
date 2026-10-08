@@ -6,9 +6,9 @@ from __future__ import annotations
 import re
 
 import pytest
-from django.contrib.auth.models import User
 from playwright.sync_api import Page, expect
 
+from apps.accounts.identity import ArangoUser
 from tests.e2e.conftest import BrowserErrors, break_api, log_in, settle
 
 MAGNITUDE = re.compile(r"-?\d+(?:\.\d+)?")
@@ -188,7 +188,7 @@ class TestAccountFlows:
         ui.get_by_role("button", name="Log out").click()
         expect(ui.get_by_role("link", name="Log in")).to_be_visible()
 
-    def test_wrong_password_is_rejected_generically(self, ui: Page, user: User) -> None:
+    def test_wrong_password_is_rejected_generically(self, ui: Page, user: ArangoUser) -> None:
         ui.goto("/accounts/login/")
         ui.get_by_label("Username").fill(user.username)
         ui.get_by_label("Password").fill("wrong-password")
@@ -197,7 +197,7 @@ class TestAccountFlows:
 
 
 class TestSignedInFlows:
-    def test_alert_rule_create_preview_edit_delete(self, ui: Page, user: User) -> None:
+    def test_alert_rule_create_preview_edit_delete(self, ui: Page, user: ArangoUser) -> None:
         log_in(ui, user.username)
         ui.goto("/alerts/")
         settle(ui)
@@ -228,7 +228,7 @@ class TestSignedInFlows:
         settle(ui)
         expect(rules).not_to_contain_text("Very strong quakes")
 
-    def test_research_snapshot_manifest_and_csv_export(self, ui: Page, user: User) -> None:
+    def test_research_snapshot_manifest_and_csv_export(self, ui: Page, user: ArangoUser) -> None:
         log_in(ui, user.username)
         ui.goto("/research/")
         settle(ui)
@@ -251,7 +251,7 @@ class TestSignedInFlows:
         lines = open(download.path(), encoding="utf-8").read().splitlines()  # noqa: SIM115
         assert len(lines) == 1 + 11  # header + one row per frozen event
 
-    def test_saved_search_round_trip(self, ui: Page, user: User) -> None:
+    def test_saved_search_round_trip(self, ui: Page, user: ArangoUser) -> None:
         log_in(ui, user.username)
         ui.goto("/explorer/?min_magnitude=4.5")
         settle(ui)
@@ -270,7 +270,7 @@ class TestSignedInFlows:
 
 class TestStaffFlows:
     def test_operations_is_staff_only(
-        self, ui: Page, user: User, browser_errors: BrowserErrors
+        self, ui: Page, user: ArangoUser, browser_errors: BrowserErrors
     ) -> None:
         browser_errors.allow("403")
         log_in(ui, user.username)
@@ -279,7 +279,7 @@ class TestStaffFlows:
         assert response.status == 403
         expect(ui.get_by_role("heading", level=1)).to_have_text("Access denied")
 
-    def test_operations_dashboard_for_staff(self, ui: Page, staff: User) -> None:
+    def test_operations_dashboard_for_staff(self, ui: Page, staff: ArangoUser) -> None:
         log_in(ui, staff.username)
         ui.goto("/operations/")
         settle(ui)

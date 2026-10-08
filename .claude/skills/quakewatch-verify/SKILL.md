@@ -9,9 +9,9 @@ Run from the repository root. All commands use the project venv. Stop and fix at
 
 ## 0. Infrastructure up
 ```bash
-docker compose ps arangodb redis        # both must be healthy
+docker compose ps arangodb              # must be healthy (the only stateful service)
 ```
-If not: `docker compose up -d arangodb redis`.
+If not: `docker compose up -d arangodb`.
 
 ## 1. Lint + format
 ```bash

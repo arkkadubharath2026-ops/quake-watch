@@ -13,8 +13,6 @@ Every dependency must solve a concrete problem. Versions are pinned to compatibl
 | pydantic | Strict validation of USGS payloads and domain DTOs (`CanonicalEventInput`) | ad-hoc dict checks |
 | pydantic-settings | Typed, validated env configuration with production guards | django-environ |
 | structlog | Structured logs with contextvar correlation IDs | stdlib only |
-| celery[redis] | Scheduled sync, backfill, alert evaluation with retries/time limits (ESD §3) | cron + scripts |
-| redis | Celery broker, cache, throttle counters, metrics, circuit-breaker state | — |
 | gunicorn | Production WSGI server | runserver |
 | whitenoise | Serve hashed, compressed static files from the app container | extra nginx container |
 
@@ -42,3 +40,11 @@ Pinned and hash-locked in `static/vendor/VENDOR_LOCK.json` by `scripts/vendor_as
 
 Deliberately not added: jQuery, DataTables (server-side pagination + plain accessible tables
 suffice), date-picker libraries (native `<input type="date">`).
+
+## Removed (2026-10-07, ADR-014 / ADR-015)
+
+| Package | Was used for | Replaced by |
+|---|---|---|
+| celery[redis] (+ kombu, billiard, vine, amqp) | background jobs, beat schedule | `apps.jobs` (ArangoDB queue, worker, scheduler) |
+| redis | Celery broker, Django cache, throttles, login counters, metrics, breaker state, job locks | ArangoDB collections (`cache_entries`, `metric_*`, `circuit_breakers`, `job_leases`, `jobs`) |
+| SQLite (stdlib, Django ORM backend) | accounts and sessions | `auth_users`, `sessions` (`apps.accounts`); stdlib `sqlite3` is now used only read-only by `migrate_auth_to_arango` |

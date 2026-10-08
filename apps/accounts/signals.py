@@ -4,15 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import user_logged_in, user_login_failed
-from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.http import HttpRequest
 
 from apps.accounts import security
-from apps.accounts.repository import delete_user_data
-from apps.core.arango.client import get_db
 from apps.operations import audit
 
 
@@ -53,9 +49,3 @@ def _on_login_failed(
         ip=ip,
         user_agent=agent,
     )
-
-
-@receiver(post_delete, sender=get_user_model())
-def _on_user_deleted(sender: Any, instance: Any, **_: Any) -> None:
-    """Deleting an account removes the user's ArangoDB data (GDPR-style cleanup, review L5)."""
-    delete_user_data(get_db(), int(instance.pk))

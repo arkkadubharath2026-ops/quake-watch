@@ -57,7 +57,6 @@ def build_logging_config(*, level: str, json_output: bool) -> dict[str, Any]:
             "urllib3": {"level": "WARNING"},
             "httpx": {"level": "WARNING"},
             "httpcore": {"level": "WARNING"},
-            "celery": {"level": level},
         },
     }
 

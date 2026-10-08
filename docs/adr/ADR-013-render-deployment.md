@@ -1,6 +1,7 @@
 # ADR-013: Deploy to Render as one Docker image, not a separate frontend host
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by ADR-014/015 (2026-10-07): services are web / worker / scheduler,
+  ArangoDB is the only stateful service (no managed Redis, no SQLite auth file).
 - **Date:** 2026-09-26
 
 ## Context

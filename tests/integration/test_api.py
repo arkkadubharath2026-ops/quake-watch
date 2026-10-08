@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -11,11 +12,13 @@ from typing import Any
 import httpx
 import pytest
 from arango.database import StandardDatabase
-from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client
 from freezegun import freeze_time
 
+from apps.accounts.identity import create_user
 from apps.core.arango import catalog
 from apps.core.arango import schema as s
 from apps.core.arango.query import explain, indexes_used
@@ -254,8 +257,8 @@ class TestEnrichEndpoint:
         key = next(iter(api_db.aql.execute("FOR e IN events LIMIT 1 RETURN e._key")))
         assert client.post(f"{API}/events/{key}/enrich").status_code == 403
 
-    def test_requires_csrf_for_session_auth(self, api_db: StandardDatabase, db: None) -> None:
-        User.objects.create_user("csrf-user", password="a-long-password-123")
+    def test_requires_csrf_for_session_auth(self, api_db: StandardDatabase) -> None:
+        create_user("csrf-user", password="a-long-password-123")
         strict = Client(enforce_csrf_checks=True)
         strict.login(username="csrf-user", password="a-long-password-123")
         key = next(iter(api_db.aql.execute("FOR e IN events LIMIT 1 RETURN e._key")))
@@ -267,7 +270,6 @@ class TestEnrichEndpoint:
         self,
         client: Client,
         seeded: StandardDatabase,
-        db: None,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         detail = load_fixture("usgs/detail_event.geojson")
@@ -286,7 +288,7 @@ class TestEnrichEndpoint:
             return UsgsClient(http, "https://usgs.test")
 
         monkeypatch.setattr("apps.ingestion.tasks.build_usgs_client", build)
-        user = User.objects.create_user("enricher", password="a-long-password-123")
+        user = create_user("enricher", password="a-long-password-123")
         client.force_login(user)
         key = "usgs_" + json.loads(detail)["id"]
         response = client.post(f"{API}/events/{key}/enrich")
@@ -378,16 +380,14 @@ class TestSystemAndOperations:
 
     @pytest.mark.parametrize("path", ["overview", "runs", "dead-letters", "diagnostics"])
     def test_operations_are_staff_only(
-        self, client: Client, arango_db: StandardDatabase, db: None, path: str
+        self, client: Client, arango_db: StandardDatabase, path: str
     ) -> None:
         assert client.get(f"{API}/operations/{path}").status_code == 403
-        client.force_login(User.objects.create_user("plain", password="a-long-password-123"))
+        client.force_login(create_user("plain", password="a-long-password-123"))
         assert client.get(f"{API}/operations/{path}").status_code == 403
 
-    def test_staff_overview_and_diagnostics(
-        self, client: Client, api_db: StandardDatabase, db: None
-    ) -> None:
-        staff = User.objects.create_user("ops", password="a-long-password-123", is_staff=True)
+    def test_staff_overview_and_diagnostics(self, client: Client, api_db: StandardDatabase) -> None:
+        staff = create_user("ops", password="a-long-password-123", is_staff=True)
         client.force_login(staff)
         overview = body(client.get(f"{API}/operations/overview"))
         assert overview["collections"]["events"] == api_db.collection(s.EVENTS).count()
@@ -398,12 +398,8 @@ class TestSystemAndOperations:
             q for q in diagnostics["queries"] if not q["uses_expected"]
         ]
 
-    def test_runs_filter_validation(
-        self, client: Client, arango_db: StandardDatabase, db: None
-    ) -> None:
-        client.force_login(
-            User.objects.create_user("o2", password="x-long-password-1", is_staff=True)
-        )
+    def test_runs_filter_validation(self, client: Client, arango_db: StandardDatabase) -> None:
+        client.force_login(create_user("o2", password="x-long-password-1", is_staff=True))
         assert client.get(f"{API}/operations/runs", {"kind": "bogus"}).status_code == 400
 
 
@@ -443,3 +439,25 @@ class TestQueryCatalog:
         types = [node["type"] for node in plan["nodes"]]
         assert "SortNode" not in types
         assert "qw_events_occurred_at" in indexes_used(plan)
+
+    def test_catalog_command_passes_on_populated_data_without_warning(
+        self, api_db: StandardDatabase
+    ) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        call_command("aql_catalog", stdout=out, stderr=err)
+        assert "BAD" not in out.getvalue()
+        assert "events collection is empty" not in err.getvalue()
+
+    def test_catalog_command_flags_an_empty_database_instead_of_blaming_queries(
+        self, arango_db: StandardDatabase
+    ) -> None:
+        # On empty collections plan choice is not meaningful (no selectivity statistics); the
+        # command must say so, whether or not the optimizer happens to pick the expected index.
+        err = io.StringIO()
+        failure: CommandError | None = None
+        try:
+            call_command("aql_catalog", stdout=io.StringIO(), stderr=err)
+        except CommandError as exc:
+            failure = exc
+        assert "events collection is empty" in err.getvalue()
+        assert failure is None or "events collection is empty" in str(failure)

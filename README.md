@@ -26,14 +26,13 @@ This makes the project suitable for a serious NoSQL/database course while also c
 
 ## Quick Start
 
-Requirements: Docker (for ArangoDB + Redis), Python 3.12.
+Requirements: Docker (for ArangoDB — the only database/stateful service), Python 3.12.
 
 ```bash
 cp .env.example .env                      # then set QW_SECRET_KEY and the ArangoDB passwords
-docker compose up -d arangodb redis
+docker compose up -d arangodb
 python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt   # (bin/ on Linux/macOS)
-.venv/Scripts/python manage.py migrate            # Django auth tables (SQLite, ADR-009)
-.venv/Scripts/python manage.py arango_migrate     # ArangoDB collections, indexes, view, graph
+.venv/Scripts/python manage.py arango_migrate     # all collections (data, accounts, jobs...), indexes, view, graph
 .venv/Scripts/python manage.py sync_feed          # ingest the live USGS feed now
 .venv/Scripts/python manage.py backfill --start 2026-08-26 --end 2026-09-25 --min-magnitude 2.5
 ```
@@ -41,7 +40,9 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt   # (b
 Then run `.venv/Scripts/python manage.py runserver` and open http://127.0.0.1:8000 — create an account
 at `/accounts/signup/` (use `manage.py createsuperuser` for a staff account that can open `/operations/`).
 
-Full stack in containers (web + Celery worker + beat):
+Background jobs run with `manage.py run_worker --with-scheduler` (ArangoDB job queue, ADR-014).
+
+Full stack in containers (web + worker + scheduler + ArangoDB):
 
 ```bash
 docker compose up -d --build              # web on http://127.0.0.1:8000, health at /health/ready
@@ -74,7 +75,7 @@ integration (coverage ≥ 90 %) → browser/a11y → dependency audit + deploy c
 |---|---|---|
 | L0 Harness | repo, Docker, Claude tooling (CLAUDE.md, agents, skills, hooks), Graphify | done |
 | L1 Foundations | typed config, logging, errors, metrics, ArangoDB schema/migrations/transactions, health | done |
-| L2 Ingestion | USGS adapters, normaliser, revision policy, identity claims, pipeline, backfill, enrichment, Celery jobs | done |
+| L2 Ingestion | USGS adapters, normaliser, revision policy, identity claims, pipeline, backfill, enrichment, background jobs | done |
 | L3 Query & API | event search/map/detail/revisions/provenance/graph, analytics, freshness, ops API, 47 catalogued AQL queries | done |
 | L4 User features | explainable alert rules + in-transaction matching, saved searches, reproducible research snapshots, admin actions, audit trail, login throttling | done |
 | L5 UI | design system (light/dark), dashboard, live map, explorer, event detail, analytics, alerts, research lab, status, operations, about, accounts | done |
@@ -150,8 +151,8 @@ Revision Store   Canonical Event
 ### Recommended
 - **Map:** Leaflet.js
 - **Charts:** Chart.js
-- **Background jobs:** Celery
-- **Broker/cache:** Redis
+- **Background jobs:** ArangoDB-backed job queue + scheduler (`apps.jobs`; replaced Celery, ADR-014)
+- **Cache / sessions / accounts:** ArangoDB (replaced Redis and SQLite, ADR-014/015)
 - **Testing:** pytest + pytest-django
 - **Containers:** Docker / Docker Compose
 - **CI:** GitHub Actions

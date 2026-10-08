@@ -6,7 +6,5 @@ httpx>=0.28,<0.29               # upstream USGS HTTP client with explicit connec
 pydantic>=2.11,<3               # strict validation of source payloads and domain DTOs
 pydantic-settings>=2.10,<3      # typed, validated environment configuration
 structlog>=25.4,<26             # structured JSON logs with contextvar correlation IDs
-celery[redis]>=5.6,<5.7         # background ingestion/backfill/alert jobs with retries
-redis>=6,<7                     # Celery broker, cache (throttling, circuit breaker state)
 gunicorn>=23,<24                # production WSGI server (container)
 whitenoise>=6.9,<7              # serve hashed static assets without a separate web server

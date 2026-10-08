@@ -22,9 +22,13 @@ Repositories (AQL, bind vars) → Services → DRF API / Django pages
 Bootstrap 5 + Leaflet (markercluster) + Chart.js (vendored, CSP nonce)
 ```
 
-Runtime processes (one image): **web** (gunicorn), **worker** (Celery), **beat** (Celery beat).
-Stores: **ArangoDB** (all domain data), **SQLite** (Django auth/sessions only — ADR-009),
-**Redis** (Celery broker, cache, throttling, metrics, circuit-breaker state).
+Runtime processes (one image): **web** (gunicorn), **worker** (`manage.py run_worker`),
+**scheduler** (`manage.py run_scheduler`).
+Store: **ArangoDB only** (ADR-014, ADR-015) — domain data; accounts (`auth_users`) and sessions
+(`sessions`); the durable job queue (`jobs`, `job_schedules`); job leases (`job_leases`); the Django
+cache (`cache_entries`: throttles, login counters, page caches); metrics (`metric_counters`,
+`metric_series`); circuit-breaker state (`circuit_breakers`). There is no relational database
+(`DATABASES = {}`), no Redis and no Celery.
 
 ## 2. Module map and layering
 
@@ -33,12 +37,13 @@ Stores: **ArangoDB** (all domain data), **SQLite** (Django auth/sessions only �
 | `apps/core` | Shared kernel: Arango client/schema/migrations/transactions, query runner, clock, errors, middleware, metrics, API error envelope + pagination | infra |
 | `apps/geo` | Geodesic distance, bbox/radius validation, region normalisation | pure |
 | `apps/earthquakes` | Event read models, filters, EventRepository, query services, API + pages | domain, repo, service, API |
-| `apps/ingestion` | USGS adapters, normaliser, revision policy/differ, pipeline, backfill, dead letters, Celery tasks | adapters, pure, repo, service, tasks |
+| `apps/ingestion` | USGS adapters, normaliser, revision policy/differ, pipeline, backfill, dead letters, job tasks | adapters, pure, repo, service, tasks |
+| `apps/jobs` | Durable job queue: task registry (`@task`, `.delay`), atomic claim/heartbeat/reap repository, worker (fork per job), scheduler, `jobs` command | pure, repo, service |
 | `apps/alerts` | Rule model + matcher (pure), repositories, CRUD API, evaluation | pure, repo, service, API |
 | `apps/analytics` | Aggregations (AQL) + API | repo, API |
 | `apps/research` | Snapshots pinned to revisions, manifests, checksums, exports | pure, repo, service, API |
 | `apps/operations` | Health/readiness, freshness, ingestion dashboard, audit log, admin actions | repo, service, API |
-| `apps/accounts` | Django auth (ORM/SQLite), signup/login | Django |
+| `apps/accounts` | Accounts and sessions in ArangoDB (`ArangoUser`, session engine, throttled backend), signup/login, user admin commands, SQLite migration | repo, Django |
 
 Dependency direction: `API/views → services → repositories/adapters → core`; pure modules
 (`domain`, `normalizer`, `revision_policy`, `differ`, `matcher`, `manifest`, `geo`) depend on nothing
@@ -95,13 +100,17 @@ enforce types, ranges, enums and the timestamp format.
 - **Configuration:** `config/env.py` (`AppSettings`, pydantic-settings, `QW_*` env vars, production guards).
 - **Logging:** structlog JSON/console; `correlation_id` bound per request by `CorrelationIdMiddleware`
   (accepts a well-formed inbound `X-Request-ID`), per job by task wrappers.
-- **Metrics:** Redis-backed counters and latency series (`apps/core/metrics.py`), p50/p95/p99 on the
-  Operations page; every AQL query is named and timed (`run_query`).
+- **Metrics:** counters and latency series buffered per process and flushed atomically to ArangoDB
+  every 5 s / 500 samples / on read (`apps/core/metrics.py`, `arango/metrics_store.py`), p50/p95/p99 on
+  the Operations page; every AQL query is named and timed (`run_query`).
+- **Shared state:** Django cache on ArangoDB (`arango/cache.py`: atomic `add`/`incr`, server-time
+  expiry), circuit breaker (`arango/breaker_store.py`, fails open), job leases (`arango/leases.py`,
+  fail closed). All use single-statement AQL re-run on write-write conflicts (`arango/atomic.py`).
 - **Errors:** `apps/core/errors.py` hierarchy → one JSON error envelope
   `{"error": {code, message, details, correlation_id}}` (`apps/core/api.py`).
 - **Security:** Django auth/CSRF, secure cookies + HSTS in production, native CSP with nonces,
   DRF throttles (`anon`, `user`, `expensive`, `export`, `admin_action`), bind-var-only AQL.
-- **Health:** `/health/live`, `/health/ready` (ArangoDB + schema version + Redis).
+- **Health:** `/health/live`, `/health/ready` (ArangoDB + schema version).
 
 ## 5. Transactions and concurrency
 `run_in_transaction` opens a stream transaction on declared collections, commits on success,
@@ -112,7 +121,7 @@ jittered exponential backoff. Verified by `tests/integration/test_arango_foundat
 ## 6. Ingestion (L2)
 
 ```text
-beat ─► sync_feed (lock) ─► UsgsClient.summary_feed ─► parse_feed ─► IngestionPipeline.ingest
+scheduler ─► jobs ─► worker ─► sync_feed (lease) ─► UsgsClient.summary_feed ─► parse_feed ─► IngestionPipeline.ingest
                                                             │            ├─ fast path: hash unchanged → bulk last_seen
                                                             │            └─ per record: stream txn {claims, event,
                                                             │               revision, raw payload, edges, observers}
@@ -172,7 +181,7 @@ trips); unchanged-record replay ≈ 0.13 ms/record via the fast path.
 | Explainable matches (FR-11) | `alerts/matches`, `alerts/matches/read`, `alerts/unread-count`, `alerts/matched-events` | `alert_matches`, `alert_rules -rule_matched_event-> events` | ADR-005 |
 | Saved searches (FR-12) | `saved-searches` (GET, POST), `saved-searches/{id}` (GET, PATCH, DELETE), `saved-searches/{id}/events` | `saved_searches` (canonical `EventFilter`) | — |
 | Research snapshots (FR-13) | `research/snapshots` (GET, POST), `research/snapshots/{id}` (GET, DELETE), `research/snapshots/{id}/export?format=zip\|csv\|json` | `research_snapshots` (pinned `[event_key, revision]`) | ADR-006 |
-| Admin actions (FR-14) | `operations/sync`, `operations/backfill` (GET, POST), `operations/dead-letters/{key}/retry` | Celery tasks, `backfill_jobs`, `dead_letters` | — |
+| Admin actions (FR-14) | `operations/sync`, `operations/backfill` (GET, POST), `operations/dead-letters/{key}/retry` | job queue (`jobs`), `backfill_jobs`, `dead_letters` | — |
 | Audit trail (FR-15) | `operations/audit` (GET only) | `audit_log` (append-only; no update/delete code path) | — |
 
 **Authorization.** All user-owned data is filtered by `user_id` inside the repository queries
@@ -233,9 +242,8 @@ against the real ArangoDB test database, seeded from the recorded feed. It cover
 - accounts, staff-only operations;
 - the server, network and throttling states with retry.
 
-Map tiles are the only thing stubbed. Any console error or CSP violation fails a test. The auth test database is file-backed (`config/settings_test.py`): Django's in-memory SQLite test
-database would share one connection across the live server's request threads, and the browser's
-parallel API calls then collided on it (intermittent 500s, found in the combined gate run).
+Map tiles are the only thing stubbed. Any console error or CSP violation fails a test. Accounts
+and sessions live in the ArangoDB test database like everything else (ADR-015).
 
 **Accessibility.** The axe-core WCAG 2.2 A/AA rules run on every page in both themes and at
 320 px, alongside keyboard, focus and reduced-motion tests. The findings (contrast, target size,
@@ -245,7 +253,7 @@ fixed in shared CSS/JS (`QW.fill`, `QW.scrollRegion`). See [ACCESSIBILITY.md](AC
 **CI** (`.github/workflows/ci.yml`, ESD §17): lint + format + strict mypy → unit/contract/
 resilience/architecture → integration with coverage ≥ 90 % → browser + accessibility suite →
 `pip-audit` + `check --deploy` with production settings → container build and a smoke check that
-the image runs as non-root. Services are the same ArangoDB and Redis images as Compose.
+the image runs as non-root. The only service is the same ArangoDB image as Compose.
 
 **Operations.** [RUNBOOK.md](RUNBOOK.md) covers start/upgrade, health and freshness signals,
 incident playbooks, data tasks, backup/restore and the release checklist. The rubric mapping is

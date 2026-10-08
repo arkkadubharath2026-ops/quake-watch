@@ -8,11 +8,11 @@ from django.http import HttpResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.core.api import authenticated_user
 from apps.core.arango.client import get_db
+from apps.core.throttling import ScopedRateThrottle
 from apps.research.repository import ResearchRepository
 from apps.research.services import ResearchService
 from config.env import get_settings
